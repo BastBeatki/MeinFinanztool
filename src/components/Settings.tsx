@@ -1,4 +1,3 @@
-
 import React, { useRef, useState } from 'react';
 // IMPORTANT: Extension .ts added for No-Build compatibility
 import { Transaction } from '../types.ts';
@@ -33,14 +32,14 @@ const Settings: React.FC<SettingsProps> = ({ transactions, onImport }) => {
         reader.onload = async (event) => {
             try {
                 const json = JSON.parse(event.target?.result as string);
-                if (!Array.isArray(json)) throw new Error("Ungültiges Format: Muss ein Array sein");
+                if (!Array.isArray(json)) throw new Error("Invalid format: Root must be an array");
                 
                 await onImport(json);
-                setStatus({ type: 'success', msg: 'Daten erfolgreich importiert!' });
+                setStatus({ type: 'success', msg: 'Data imported successfully!' });
                 setTimeout(() => setStatus(null), 3000);
             } catch (err) {
                 console.error(err);
-                setStatus({ type: 'error', msg: 'Import fehlgeschlagen. JSON prüfen.' });
+                setStatus({ type: 'error', msg: 'Failed to import. Check JSON format.' });
             }
         };
         reader.readAsText(file);
@@ -50,7 +49,7 @@ const Settings: React.FC<SettingsProps> = ({ transactions, onImport }) => {
 
     return (
         <div className="max-w-2xl mx-auto pb-20 md:pb-0 space-y-6">
-            <h1 className="text-2xl font-bold text-white">Einstellungen</h1>
+            <h1 className="text-2xl font-bold text-white">Settings</h1>
 
             {status && (
                 <div className={`p-4 rounded-lg flex items-center gap-3 ${status.type === 'success' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
@@ -65,17 +64,17 @@ const Settings: React.FC<SettingsProps> = ({ transactions, onImport }) => {
                         <div className="p-2 bg-blue-500/20 rounded-lg">
                             <Database className="w-5 h-5 text-blue-400" />
                         </div>
-                        <h2 className="text-lg font-semibold text-white">Datenverwaltung</h2>
+                        <h2 className="text-lg font-semibold text-white">Data Management</h2>
                     </div>
-                    <p className="text-slate-400 text-sm">Exportiere deine Daten als Backup oder übertrage sie auf ein anderes Gerät.</p>
+                    <p className="text-slate-400 text-sm">Export your data for backup or move it to another device.</p>
                 </div>
 
                 <div className="p-6 grid gap-6">
                     {/* Export */}
                     <div className="flex items-center justify-between">
                         <div>
-                            <h3 className="text-white font-medium">Daten Exportieren</h3>
-                            <p className="text-slate-500 text-sm">Download als JSON Datei ({transactions.length} Einträge)</p>
+                            <h3 className="text-white font-medium">Export Data</h3>
+                            <p className="text-slate-500 text-sm">Download as JSON file ({transactions.length} records)</p>
                         </div>
                         <button
                             onClick={handleExport}
@@ -91,8 +90,8 @@ const Settings: React.FC<SettingsProps> = ({ transactions, onImport }) => {
                     {/* Import */}
                     <div className="flex items-center justify-between">
                         <div>
-                            <h3 className="text-white font-medium">Daten Importieren</h3>
-                            <p className="text-slate-500 text-sm">Wiederherstellen (Überschreibt aktuelle Daten)</p>
+                            <h3 className="text-white font-medium">Import Data</h3>
+                            <p className="text-slate-500 text-sm">Restore from backup (Overwrites current data)</p>
                         </div>
                         <div>
                             <input
@@ -115,8 +114,8 @@ const Settings: React.FC<SettingsProps> = ({ transactions, onImport }) => {
             </div>
             
              <div className="text-center text-slate-600 text-xs mt-10">
-                <p>FinanceFlow v1.1.0</p>
-                <p>Lokal gespeichert via IndexedDB</p>
+                <p>FinanceFlow v1.0.0</p>
+                <p>Running locally using IndexedDB</p>
             </div>
         </div>
     );

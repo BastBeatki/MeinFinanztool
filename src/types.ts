@@ -1,7 +1,4 @@
-
 export type TransactionType = 'income' | 'expense';
-export type PaymentMethod = 'cash' | 'digital';
-export type RecurrenceInterval = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 export interface Transaction {
     id: string;
@@ -11,10 +8,6 @@ export interface Transaction {
     category: string;
     note: string;
     createdAt: number;
-    // New fields
-    paymentMethod: PaymentMethod;
-    recurrence: RecurrenceInterval;
-    recurrenceEndDate?: string;
 }
 
 export enum AppView {

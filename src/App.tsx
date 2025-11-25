@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, isValidElement } from 'react';
 // IMPORTANT: Extensions added for No-Build compatibility
 import { dbService } from './services/db.ts';
@@ -46,7 +45,7 @@ const App: React.FC = () => {
     };
 
     const handleDeleteTransaction = async (id: string) => {
-        if (confirm('Möchtest du diesen Eintrag wirklich löschen?')) {
+        if (confirm('Are you sure you want to delete this transaction?')) {
             await dbService.deleteTransaction(id);
             await refreshData();
         }
@@ -61,7 +60,7 @@ const App: React.FC = () => {
         return (
             <div className="h-screen w-full flex items-center justify-center bg-slate-950 text-slate-400 flex-col gap-4">
                 <Loader2 className="w-10 h-10 animate-spin text-blue-500" />
-                <p>Lade FinanceFlow...</p>
+                <p>Loading FinanceFlow...</p>
             </div>
         );
     }
@@ -85,25 +84,25 @@ const App: React.FC = () => {
                         active={view === AppView.DASHBOARD} 
                         onClick={() => setView(AppView.DASHBOARD)} 
                         icon={<LayoutDashboard />} 
-                        label="Übersicht" 
+                        label="Dashboard" 
                     />
                     <NavButton 
                         active={view === AppView.TRANSACTIONS} 
                         onClick={() => setView(AppView.TRANSACTIONS)} 
                         icon={<List />} 
-                        label="Buchungen" 
+                        label="Transactions" 
                     />
                     <NavButton 
                         active={view === AppView.ADD} 
                         onClick={() => setView(AppView.ADD)} 
                         icon={<PlusCircle />} 
-                        label="Neu" 
+                        label="Add New" 
                     />
                     <NavButton 
                         active={view === AppView.SETTINGS} 
                         onClick={() => setView(AppView.SETTINGS)} 
                         icon={<SettingsIcon />} 
-                        label="Einstellungen" 
+                        label="Settings" 
                     />
                 </nav>
             </aside>
