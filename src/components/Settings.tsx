@@ -1,14 +1,16 @@
+
 import React, { useRef, useState } from 'react';
 // IMPORTANT: Extension .ts added for No-Build compatibility
 import { Transaction } from '../types.ts';
-import { Download, Upload, AlertTriangle, CheckCircle, Database } from 'lucide-react';
+import { Download, Upload, AlertTriangle, CheckCircle, Database, RefreshCw, Trash2 } from 'lucide-react';
 
 interface SettingsProps {
     transactions: Transaction[];
     onImport: (data: Transaction[]) => Promise<void>;
+    onReset: () => Promise<void>;
 }
 
-const Settings: React.FC<SettingsProps> = ({ transactions, onImport }) => {
+const Settings: React.FC<SettingsProps> = ({ transactions, onImport, onReset }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [status, setStatus] = useState<{type: 'success' | 'error', msg: string} | null>(null);
 
@@ -32,14 +34,14 @@ const Settings: React.FC<SettingsProps> = ({ transactions, onImport }) => {
         reader.onload = async (event) => {
             try {
                 const json = JSON.parse(event.target?.result as string);
-                if (!Array.isArray(json)) throw new Error("Invalid format: Root must be an array");
+                if (!Array.isArray(json)) throw new Error("Ungültiges Format: Muss ein Array sein");
                 
                 await onImport(json);
-                setStatus({ type: 'success', msg: 'Data imported successfully!' });
+                setStatus({ type: 'success', msg: 'Daten erfolgreich importiert!' });
                 setTimeout(() => setStatus(null), 3000);
             } catch (err) {
                 console.error(err);
-                setStatus({ type: 'error', msg: 'Failed to import. Check JSON format.' });
+                setStatus({ type: 'error', msg: 'Import fehlgeschlagen. JSON prüfen.' });
             }
         };
         reader.readAsText(file);
@@ -47,9 +49,17 @@ const Settings: React.FC<SettingsProps> = ({ transactions, onImport }) => {
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
+    const handleReset = async () => {
+        if (confirm("WARNUNG: Alle Daten werden gelöscht und auf die Standard-Beispieldaten zurückgesetzt. Fortfahren?")) {
+            await onReset();
+            setStatus({ type: 'success', msg: 'Datenbank zurückgesetzt!' });
+            setTimeout(() => setStatus(null), 3000);
+        }
+    };
+
     return (
         <div className="max-w-2xl mx-auto pb-20 md:pb-0 space-y-6">
-            <h1 className="text-2xl font-bold text-white">Settings</h1>
+            <h1 className="text-2xl font-bold text-white">Einstellungen</h1>
 
             {status && (
                 <div className={`p-4 rounded-lg flex items-center gap-3 ${status.type === 'success' ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
@@ -64,24 +74,24 @@ const Settings: React.FC<SettingsProps> = ({ transactions, onImport }) => {
                         <div className="p-2 bg-blue-500/20 rounded-lg">
                             <Database className="w-5 h-5 text-blue-400" />
                         </div>
-                        <h2 className="text-lg font-semibold text-white">Data Management</h2>
+                        <h2 className="text-lg font-semibold text-white">Datenverwaltung</h2>
                     </div>
-                    <p className="text-slate-400 text-sm">Export your data for backup or move it to another device.</p>
+                    <p className="text-slate-400 text-sm">Verwalte deine Finanzdaten sicher und lokal.</p>
                 </div>
 
                 <div className="p-6 grid gap-6">
                     {/* Export */}
                     <div className="flex items-center justify-between">
                         <div>
-                            <h3 className="text-white font-medium">Export Data</h3>
-                            <p className="text-slate-500 text-sm">Download as JSON file ({transactions.length} records)</p>
+                            <h3 className="text-white font-medium">Backup erstellen</h3>
+                            <p className="text-slate-500 text-sm">Download als JSON Datei</p>
                         </div>
                         <button
                             onClick={handleExport}
                             className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg transition-colors"
                         >
                             <Download className="w-4 h-4" />
-                            Export
+                            Backup
                         </button>
                     </div>
 
@@ -90,8 +100,8 @@ const Settings: React.FC<SettingsProps> = ({ transactions, onImport }) => {
                     {/* Import */}
                     <div className="flex items-center justify-between">
                         <div>
-                            <h3 className="text-white font-medium">Import Data</h3>
-                            <p className="text-slate-500 text-sm">Restore from backup (Overwrites current data)</p>
+                            <h3 className="text-white font-medium">Backup wiederherstellen</h3>
+                            <p className="text-slate-500 text-sm">Importiert eine vorhandene JSON Datei</p>
                         </div>
                         <div>
                             <input
@@ -110,12 +120,29 @@ const Settings: React.FC<SettingsProps> = ({ transactions, onImport }) => {
                             </button>
                         </div>
                     </div>
+
+                    <div className="h-px bg-slate-700/50"></div>
+
+                     {/* Reset */}
+                     <div className="flex items-center justify-between">
+                        <div>
+                            <h3 className="text-red-400 font-medium">Datenbank zurücksetzen</h3>
+                            <p className="text-slate-500 text-sm">Löscht alles und lädt die Beispieldaten</p>
+                        </div>
+                        <button
+                            onClick={handleReset}
+                            className="flex items-center gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-4 py-2 rounded-lg transition-colors"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                            Reset
+                        </button>
+                    </div>
                 </div>
             </div>
             
              <div className="text-center text-slate-600 text-xs mt-10">
-                <p>FinanceFlow v1.0.0</p>
-                <p>Running locally using IndexedDB</p>
+                <p>FinanceFlow v1.2.0 (German Update)</p>
+                <p>Offline-First / IndexedDB Storage</p>
             </div>
         </div>
     );

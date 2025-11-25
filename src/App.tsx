@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, isValidElement } from 'react';
 // IMPORTANT: Extensions added for No-Build compatibility
 import { dbService } from './services/db.ts';
@@ -45,7 +46,7 @@ const App: React.FC = () => {
     };
 
     const handleDeleteTransaction = async (id: string) => {
-        if (confirm('Are you sure you want to delete this transaction?')) {
+        if (confirm('Möchtest du diesen Eintrag wirklich löschen?')) {
             await dbService.deleteTransaction(id);
             await refreshData();
         }
@@ -56,11 +57,16 @@ const App: React.FC = () => {
         await refreshData();
     };
 
+    const handleReset = async () => {
+        await dbService.resetDatabase();
+        await refreshData();
+    };
+
     if (loading) {
         return (
             <div className="h-screen w-full flex items-center justify-center bg-slate-950 text-slate-400 flex-col gap-4">
                 <Loader2 className="w-10 h-10 animate-spin text-blue-500" />
-                <p>Loading FinanceFlow...</p>
+                <p>Lade FinanceFlow...</p>
             </div>
         );
     }
@@ -84,25 +90,25 @@ const App: React.FC = () => {
                         active={view === AppView.DASHBOARD} 
                         onClick={() => setView(AppView.DASHBOARD)} 
                         icon={<LayoutDashboard />} 
-                        label="Dashboard" 
+                        label="Übersicht" 
                     />
                     <NavButton 
                         active={view === AppView.TRANSACTIONS} 
                         onClick={() => setView(AppView.TRANSACTIONS)} 
                         icon={<List />} 
-                        label="Transactions" 
+                        label="Buchungen" 
                     />
                     <NavButton 
                         active={view === AppView.ADD} 
                         onClick={() => setView(AppView.ADD)} 
                         icon={<PlusCircle />} 
-                        label="Add New" 
+                        label="Neu" 
                     />
                     <NavButton 
                         active={view === AppView.SETTINGS} 
                         onClick={() => setView(AppView.SETTINGS)} 
                         icon={<SettingsIcon />} 
-                        label="Settings" 
+                        label="Einstellungen" 
                     />
                 </nav>
             </aside>
@@ -113,7 +119,7 @@ const App: React.FC = () => {
                     {view === AppView.DASHBOARD && <Dashboard transactions={transactions} />}
                     {view === AppView.TRANSACTIONS && <TransactionList transactions={transactions} onDelete={handleDeleteTransaction} />}
                     {view === AppView.ADD && <TransactionForm onSubmit={handleAddTransaction} onCancel={() => setView(AppView.DASHBOARD)} />}
-                    {view === AppView.SETTINGS && <Settings transactions={transactions} onImport={handleImport} />}
+                    {view === AppView.SETTINGS && <Settings transactions={transactions} onImport={handleImport} onReset={handleReset} />}
                 </div>
             </main>
 

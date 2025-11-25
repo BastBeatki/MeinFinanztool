@@ -1,7 +1,8 @@
+
 import React from 'react';
 // IMPORTANT: Extension .ts added for No-Build compatibility
 import { Transaction } from '../types.ts';
-import { Trash2, ArrowUpRight, ArrowDownLeft, Search } from 'lucide-react';
+import { Trash2, ArrowUpRight, ArrowDownLeft, Search, Banknote, CreditCard, Repeat } from 'lucide-react';
 
 interface TransactionListProps {
     transactions: Transaction[];
@@ -10,24 +11,24 @@ interface TransactionListProps {
 
 const TransactionList: React.FC<TransactionListProps> = ({ transactions, onDelete }) => {
     const formatCurrency = (val: number) => {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+        return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val);
     };
 
     const formatDate = (dateStr: string) => {
-        return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        return new Date(dateStr).toLocaleDateString('de-DE', { month: 'short', day: 'numeric', year: 'numeric' });
     };
 
     return (
         <div className="space-y-6 pb-20 md:pb-0 h-full flex flex-col">
             <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-bold text-white">Transactions</h1>
-                <span className="text-slate-400 text-sm">{transactions.length} entries</span>
+                <h1 className="text-2xl font-bold text-white">Transaktionen</h1>
+                <span className="text-slate-400 text-sm">{transactions.length} Einträge</span>
             </div>
 
             {transactions.length === 0 ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-slate-500">
                     <Search className="w-12 h-12 mb-4 opacity-50" />
-                    <p>No transactions found.</p>
+                    <p>Keine Transaktionen gefunden.</p>
                 </div>
             ) : (
                 <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
@@ -40,10 +41,20 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, onDelet
                                     {tx.type === 'income' ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownLeft className="w-5 h-5" />}
                                 </div>
                                 <div>
-                                    <p className="font-medium text-white">{tx.category}</p>
+                                    <div className="flex items-center gap-2">
+                                        <p className="font-medium text-white">{tx.category}</p>
+                                        {tx.recurrence !== 'none' && (
+                                            <Repeat className="w-3 h-3 text-blue-400" title="Wiederkehrend" />
+                                        )}
+                                    </div>
                                     <div className="flex items-center gap-2">
                                         <span className="text-xs text-slate-400">{formatDate(tx.date)}</span>
-                                        {tx.note && <span className="text-xs text-slate-500">• {tx.note}</span>}
+                                        <span className="text-slate-600">•</span>
+                                        <span className="text-xs text-slate-400 flex items-center gap-1">
+                                            {tx.paymentMethod === 'cash' ? <Banknote className="w-3 h-3" /> : <CreditCard className="w-3 h-3" />}
+                                            {tx.paymentMethod === 'cash' ? 'Bar' : 'Digital'}
+                                        </span>
+                                        {tx.note && <span className="text-xs text-slate-500 ml-1">• {tx.note}</span>}
                                     </div>
                                 </div>
                             </div>
@@ -55,7 +66,7 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, onDelet
                                 <button 
                                     onClick={() => onDelete(tx.id)}
                                     className="text-slate-500 hover:text-red-400 p-2 rounded-lg hover:bg-slate-700 transition-colors"
-                                    aria-label="Delete transaction"
+                                    aria-label="Löschen"
                                 >
                                     <Trash2 className="w-4 h-4" />
                                 </button>
