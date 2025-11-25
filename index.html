@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FinanceFlow</title>
     
-    <!-- Tailwind CSS -->
+    <!-- Tailwind CSS (CDN for Preview fallback) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -34,7 +34,9 @@
     "react-dom/": "https://esm.sh/react-dom@18.2.0/",
     "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
     "recharts": "https://esm.sh/recharts@2.12.7?external=react,react-dom",
-    "lucide-react": "https://esm.sh/lucide-react@0.330.0?external=react"
+    "lucide-react": "https://esm.sh/lucide-react@0.330.0?external=react",
+    "vite": "https://aistudiocdn.com/vite@^7.2.4",
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.1"
   }
 }
 </script>
@@ -45,7 +47,7 @@
 <body class="bg-slate-950 text-slate-100 overflow-hidden">
     <div id="root"></div>
 
-    <!-- Main Application Script -->
-    <script type="text/babel" data-type="module" src="./index.tsx"></script>
+    <!-- Main Application Script - Points to src/index.tsx -->
+    <script type="text/babel" data-type="module" src="./src/index.tsx"></script>
 </body>
 </html>
