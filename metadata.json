@@ -1,0 +1,5 @@
+{
+  "name": "FinanceFlow",
+  "description": "A local-first, privacy-focused personal finance tracker with dashboard, charts, and data management.",
+  "requestFramePermissions": []
+}
