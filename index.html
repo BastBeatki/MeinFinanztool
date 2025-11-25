@@ -24,7 +24,7 @@
         }
     </script>
 
-    <!-- Import Map -->
+    <!-- Import Map (For Local Preview Only) -->
     <script type="importmap">
 {
   "imports": {
@@ -41,13 +41,18 @@
 }
 </script>
 
-    <!-- Babel for on-the-fly compilation -->
+    <!-- Babel for on-the-fly compilation (For Local Preview Only) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
 <body class="bg-slate-950 text-slate-100 overflow-hidden">
     <div id="root"></div>
 
-    <!-- Main Application Script - Points to src/index.tsx -->
+    <!-- MODE 1: Local Preview (Babel) -->
+    <!-- This script runs in the browser preview but fails in production build (safe 404) -->
     <script type="text/babel" data-type="module" src="./src/index.tsx"></script>
+
+    <!-- MODE 2: Vercel / Vite Build -->
+    <!-- This script is picked up by Vite during build but ignored by browser preview (syntax error on JSX) -->
+    <script type="module" src="/src/index.tsx"></script>
 </body>
 </html>
