@@ -1,15 +1,18 @@
 import React, { useState } from 'react';
-import { TransactionType, Transaction } from '../types';
-import { PlusCircle, Loader2 } from 'lucide-react';
+import { TransactionType, Transaction, PaymentMethod, RecurrenceFrequency, RecurringRule } from '../types';
+import { PlusCircle, Loader2, Repeat, CreditCard, Banknote } from 'lucide-react';
 
 interface TransactionFormProps {
-    onSubmit: (tx: Omit<Transaction, 'id' | 'createdAt'>) => Promise<void>;
+    onSubmit: (
+        tx: Omit<Transaction, 'id' | 'createdAt'>, 
+        rule?: Omit<RecurringRule, 'id' | 'createdAt' | 'active'>
+    ) => Promise<void>;
     onCancel: () => void;
 }
 
 const CATEGORIES = [
-    'Essen', 'Lebensmittel', 'Transport', 'Nebenkosten', 'Unterhaltung', 'Einkaufen', 
-    'Gesundheit', 'Bildung', 'Gehalt', 'Freiberuflich', 'Investition', 'Sonstiges'
+    'Miete', 'Essen', 'Lebensmittel', 'Transport', 'Nebenkosten', 'Unterhaltung', 'Einkaufen', 
+    'Gesundheit', 'Bildung', 'Gehalt', 'Freiberuflich', 'Investition', 'Versicherung', 'Abo', 'Sonstiges'
 ];
 
 const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel }) => {
@@ -18,6 +21,11 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
     const [category, setCategory] = useState(CATEGORIES[0]);
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [note, setNote] = useState('');
+    
+    // New Fields
+    const [method, setMethod] = useState<PaymentMethod>('digital');
+    const [isRecurring, setIsRecurring] = useState(false);
+    
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -26,13 +34,36 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
 
         setIsSubmitting(true);
         try {
-            await onSubmit({
+            const txData: Omit<Transaction, 'id' | 'createdAt'> = {
                 amount: parseFloat(amount),
                 type,
                 category,
                 date,
-                note
-            });
+                note,
+                method,
+                // If recurring, initial transaction starts as pending (user confirms setup), 
+                // OR completed if date is today/past. Let's default to 'completed' for the FIRST entry manually entered,
+                // unless user wants it pending. Simple: Manually entered = Completed usually.
+                status: 'completed', 
+                isRecurring,
+            };
+
+            let ruleData: Omit<RecurringRule, 'id' | 'createdAt' | 'active'> | undefined;
+
+            if (isRecurring) {
+                // If recurring, we create a rule
+                ruleData = {
+                    type,
+                    category,
+                    amount: parseFloat(amount),
+                    note,
+                    method,
+                    frequency: 'monthly', // Fixed for now
+                    dayOfMonth: new Date(date).getDate(),
+                };
+            }
+
+            await onSubmit(txData, ruleData);
         } finally {
             setIsSubmitting(false);
         }
@@ -78,6 +109,58 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
                         placeholder="0.00"
                         className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                     />
+                </div>
+
+                {/* Method & Recurring Toggle */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                         <label className="block text-sm font-medium text-slate-400 mb-2">Zahlungsmethode</label>
+                         <div className="grid grid-cols-2 gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setMethod('digital')}
+                                className={`flex items-center justify-center gap-2 py-2.5 rounded-lg border transition-all ${
+                                    method === 'digital' 
+                                        ? 'bg-blue-600/20 border-blue-500 text-blue-400' 
+                                        : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600'
+                                }`}
+                            >
+                                <CreditCard className="w-4 h-4" />
+                                <span className="text-sm">Digital</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setMethod('cash')}
+                                className={`flex items-center justify-center gap-2 py-2.5 rounded-lg border transition-all ${
+                                    method === 'cash' 
+                                        ? 'bg-green-600/20 border-green-500 text-green-400' 
+                                        : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600'
+                                }`}
+                            >
+                                <Banknote className="w-4 h-4" />
+                                <span className="text-sm">Bar</span>
+                            </button>
+                         </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-slate-400 mb-2">Wiederholung</label>
+                        <button
+                            type="button"
+                            onClick={() => setIsRecurring(!isRecurring)}
+                            className={`w-full flex items-center justify-between px-4 py-3 rounded-lg border transition-all ${
+                                isRecurring 
+                                    ? 'bg-purple-600/20 border-purple-500 text-purple-400' 
+                                    : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600'
+                            }`}
+                        >
+                            <div className="flex items-center gap-2">
+                                <Repeat className="w-4 h-4" />
+                                <span className="text-sm font-medium">Monatliche Fixkosten</span>
+                            </div>
+                            <div className={`w-4 h-4 rounded-full border ${isRecurring ? 'bg-purple-500 border-purple-500' : 'border-slate-500'}`} />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

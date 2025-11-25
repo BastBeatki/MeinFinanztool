@@ -1,6 +1,6 @@
 import React, { useEffect, useState, isValidElement } from 'react';
 import { dbService } from './services/db';
-import { Transaction, AppView } from './types';
+import { Transaction, AppView, RecurringRule } from './types';
 import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
 import TransactionForm from './components/TransactionForm';
@@ -11,6 +11,8 @@ const App: React.FC = () => {
     const [view, setView] = useState<AppView>(AppView.DASHBOARD);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [loading, setLoading] = useState(true);
+    // 'monthly' = Forecast End of Month, 'daily' = Current Status (Today)
+    const [dashboardMode, setDashboardMode] = useState<'monthly' | 'daily'>('daily');
 
     // Initialize DB and fetch data
     useEffect(() => {
@@ -32,19 +34,40 @@ const App: React.FC = () => {
         setTransactions(data);
     };
 
-    const handleAddTransaction = async (txData: Omit<Transaction, 'id' | 'createdAt'>) => {
+    const handleAddTransaction = async (txData: Omit<Transaction, 'id' | 'createdAt'>, ruleData?: Omit<RecurringRule, 'id' | 'createdAt' | 'active'>) => {
+        
+        // 1. Create the Transaction
         const newTx: Transaction = {
             ...txData,
             id: crypto.randomUUID(),
             createdAt: Date.now()
         };
+
+        // 2. If it's a recurring rule, save the rule AND the transaction
+        if (txData.isRecurring && ruleData) {
+            const ruleId = crypto.randomUUID();
+            const newRule: RecurringRule = {
+                ...ruleData,
+                id: ruleId,
+                active: true,
+                createdAt: Date.now()
+            };
+            newTx.recurringId = ruleId; // Link the first transaction
+            await dbService.addRule(newRule);
+        }
+
         await dbService.addTransaction(newTx);
         await refreshData();
         setView(AppView.DASHBOARD);
     };
 
+    const handleUpdateTransaction = async (updatedTx: Transaction) => {
+        await dbService.updateTransaction(updatedTx);
+        await refreshData();
+    };
+
     const handleDeleteTransaction = async (id: string) => {
-        if (confirm('Sind Sie sicher, dass Sie diese Transaktion löschen möchten?')) {
+        if (confirm('Möchten Sie diese Transaktion wirklich löschen?')) {
             await dbService.deleteTransaction(id);
             await refreshData();
         }
@@ -109,10 +132,32 @@ const App: React.FC = () => {
             {/* Main Content Area */}
             <main className="flex-1 overflow-auto relative">
                 <div className="p-6 md:p-8 max-w-7xl mx-auto min-h-full">
-                    {view === AppView.DASHBOARD && <Dashboard transactions={transactions} />}
-                    {view === AppView.TRANSACTIONS && <TransactionList transactions={transactions} onDelete={handleDeleteTransaction} />}
-                    {view === AppView.ADD && <TransactionForm onSubmit={handleAddTransaction} onCancel={() => setView(AppView.DASHBOARD)} />}
-                    {view === AppView.SETTINGS && <Settings transactions={transactions} onImport={handleImport} />}
+                    {view === AppView.DASHBOARD && (
+                        <Dashboard 
+                            transactions={transactions} 
+                            mode={dashboardMode} 
+                            setMode={setDashboardMode} 
+                        />
+                    )}
+                    {view === AppView.TRANSACTIONS && (
+                        <TransactionList 
+                            transactions={transactions} 
+                            onDelete={handleDeleteTransaction} 
+                            onUpdate={handleUpdateTransaction}
+                        />
+                    )}
+                    {view === AppView.ADD && (
+                        <TransactionForm 
+                            onSubmit={handleAddTransaction} 
+                            onCancel={() => setView(AppView.DASHBOARD)} 
+                        />
+                    )}
+                    {view === AppView.SETTINGS && (
+                        <Settings 
+                            transactions={transactions} 
+                            onImport={handleImport} 
+                        />
+                    )}
                 </div>
             </main>
 
