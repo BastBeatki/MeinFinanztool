@@ -9,24 +9,24 @@ interface TransactionListProps {
 
 const TransactionList: React.FC<TransactionListProps> = ({ transactions, onDelete }) => {
     const formatCurrency = (val: number) => {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+        return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val);
     };
 
     const formatDate = (dateStr: string) => {
-        return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+        return new Date(dateStr).toLocaleDateString('de-DE', { month: 'short', day: 'numeric', year: 'numeric' });
     };
 
     return (
         <div className="space-y-6 pb-20 md:pb-0 h-full flex flex-col">
             <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-bold text-white">Transactions</h1>
-                <span className="text-slate-400 text-sm">{transactions.length} entries</span>
+                <h1 className="text-2xl font-bold text-white">Transaktionen</h1>
+                <span className="text-slate-400 text-sm">{transactions.length} Einträge</span>
             </div>
 
             {transactions.length === 0 ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-slate-500">
                     <Search className="w-12 h-12 mb-4 opacity-50" />
-                    <p>No transactions found.</p>
+                    <p>Keine Transaktionen gefunden.</p>
                 </div>
             ) : (
                 <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
@@ -54,7 +54,7 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, onDelet
                                 <button 
                                     onClick={() => onDelete(tx.id)}
                                     className="text-slate-500 hover:text-red-400 p-2 rounded-lg hover:bg-slate-700 transition-colors"
-                                    aria-label="Delete transaction"
+                                    aria-label="Transaktion löschen"
                                 >
                                     <Trash2 className="w-4 h-4" />
                                 </button>

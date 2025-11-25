@@ -6,11 +6,11 @@ const STORE_NAME = 'transactions';
 
 // Seed data
 const SEED_DATA: Omit<Transaction, 'id'>[] = [
-    { date: new Date(new Date().setDate(new Date().getDate() - 1)).toISOString().split('T')[0], amount: 2500, type: 'income', category: 'Salary', note: 'Monthly Salary', createdAt: Date.now() - 100000 },
-    { date: new Date(new Date().setDate(new Date().getDate() - 2)).toISOString().split('T')[0], amount: 45.50, type: 'expense', category: 'Groceries', note: 'Weekly shopping', createdAt: Date.now() - 200000 },
-    { date: new Date(new Date().setDate(new Date().getDate() - 3)).toISOString().split('T')[0], amount: 120, type: 'expense', category: 'Utilities', note: 'Internet Bill', createdAt: Date.now() - 300000 },
-    { date: new Date(new Date().setDate(new Date().getDate() - 5)).toISOString().split('T')[0], amount: 15.00, type: 'expense', category: 'Transport', note: 'Uber ride', createdAt: Date.now() - 400000 },
-    { date: new Date(new Date().setDate(new Date().getDate() - 10)).toISOString().split('T')[0], amount: 300, type: 'income', category: 'Freelance', note: 'Logo Design', createdAt: Date.now() - 500000 },
+    { date: new Date(new Date().setDate(new Date().getDate() - 1)).toISOString().split('T')[0], amount: 2500, type: 'income', category: 'Gehalt', note: 'Monatsgehalt', createdAt: Date.now() - 100000 },
+    { date: new Date(new Date().setDate(new Date().getDate() - 2)).toISOString().split('T')[0], amount: 45.50, type: 'expense', category: 'Lebensmittel', note: 'Wocheneinkauf', createdAt: Date.now() - 200000 },
+    { date: new Date(new Date().setDate(new Date().getDate() - 3)).toISOString().split('T')[0], amount: 120, type: 'expense', category: 'Nebenkosten', note: 'Internet Rechnung', createdAt: Date.now() - 300000 },
+    { date: new Date(new Date().setDate(new Date().getDate() - 5)).toISOString().split('T')[0], amount: 15.00, type: 'expense', category: 'Transport', note: 'Uber Fahrt', createdAt: Date.now() - 400000 },
+    { date: new Date(new Date().setDate(new Date().getDate() - 10)).toISOString().split('T')[0], amount: 300, type: 'income', category: 'Freiberuflich', note: 'Logo Design', createdAt: Date.now() - 500000 },
 ];
 
 export class DBService {

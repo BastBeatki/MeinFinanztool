@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="de" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -48,11 +48,11 @@
     <div id="root"></div>
 
     <!-- MODE 1: Local Preview (Babel) -->
-    <!-- This script runs in the browser preview but fails in production build (safe 404) -->
-    <script type="text/babel" data-type="module" src="./src/index.tsx"></script>
+    <!-- Pointing to root index.tsx to ensure changes are reflected -->
+    <script type="text/babel" data-type="module" src="./index.tsx"></script>
 
     <!-- MODE 2: Vercel / Vite Build -->
-    <!-- This script is picked up by Vite during build but ignored by browser preview (syntax error on JSX) -->
-    <script type="module" src="/src/index.tsx"></script>
+    <!-- Pointing to root index.tsx -->
+    <script type="module" src="/index.tsx"></script>
 </body>
 </html>

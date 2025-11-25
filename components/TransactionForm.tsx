@@ -8,8 +8,8 @@ interface TransactionFormProps {
 }
 
 const CATEGORIES = [
-    'Food', 'Groceries', 'Transport', 'Utilities', 'Entertainment', 'Shopping', 
-    'Health', 'Education', 'Salary', 'Freelance', 'Investment', 'Other'
+    'Essen', 'Lebensmittel', 'Transport', 'Nebenkosten', 'Unterhaltung', 'Einkaufen', 
+    'Gesundheit', 'Bildung', 'Gehalt', 'Freiberuflich', 'Investition', 'Sonstiges'
 ];
 
 const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel }) => {
@@ -40,7 +40,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
 
     return (
         <div className="max-w-2xl mx-auto pb-20 md:pb-0">
-             <h1 className="text-2xl font-bold text-white mb-6">Add Transaction</h1>
+             <h1 className="text-2xl font-bold text-white mb-6">Transaktion hinzufügen</h1>
              
              <form onSubmit={handleSubmit} className="bg-slate-800 p-6 rounded-xl border border-slate-700 space-y-6">
                 
@@ -53,7 +53,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
                             type === 'expense' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
                         }`}
                     >
-                        Expense
+                        Ausgabe
                     </button>
                     <button
                         type="button"
@@ -62,13 +62,13 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
                             type === 'income' ? 'bg-slate-700 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'
                         }`}
                     >
-                        Income
+                        Einnahme
                     </button>
                 </div>
 
                 {/* Amount */}
                 <div>
-                    <label className="block text-sm font-medium text-slate-400 mb-2">Amount ($)</label>
+                    <label className="block text-sm font-medium text-slate-400 mb-2">Betrag (€)</label>
                     <input
                         type="number"
                         step="0.01"
@@ -83,7 +83,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Category */}
                     <div>
-                        <label className="block text-sm font-medium text-slate-400 mb-2">Category</label>
+                        <label className="block text-sm font-medium text-slate-400 mb-2">Kategorie</label>
                         <select
                             value={category}
                             onChange={(e) => setCategory(e.target.value)}
@@ -97,7 +97,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
 
                     {/* Date */}
                     <div>
-                        <label className="block text-sm font-medium text-slate-400 mb-2">Date</label>
+                        <label className="block text-sm font-medium text-slate-400 mb-2">Datum</label>
                         <input
                             type="date"
                             required
@@ -110,13 +110,13 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
 
                 {/* Note */}
                 <div>
-                    <label className="block text-sm font-medium text-slate-400 mb-2">Note (Optional)</label>
+                    <label className="block text-sm font-medium text-slate-400 mb-2">Notiz (Optional)</label>
                     <textarea
                         value={note}
                         onChange={(e) => setNote(e.target.value)}
                         rows={3}
                         className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                        placeholder="What was this for?"
+                        placeholder="Wofür war das?"
                     />
                 </div>
 
@@ -127,7 +127,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
                         onClick={onCancel}
                         className="px-6 py-2.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-700 transition-colors"
                     >
-                        Cancel
+                        Abbrechen
                     </button>
                     <button
                         type="submit"
@@ -137,12 +137,12 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
                         {isSubmitting ? (
                             <>
                                 <Loader2 className="w-4 h-4 animate-spin" />
-                                Saving...
+                                Speichern...
                             </>
                         ) : (
                             <>
                                 <PlusCircle className="w-4 h-4" />
-                                Add Transaction
+                                Hinzufügen
                             </>
                         )}
                     </button>

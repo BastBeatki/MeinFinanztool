@@ -25,7 +25,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions }) => {
     const chartData = useMemo(() => {
         // Group by last 7 unique dates or just take recent transactions
         const grouped = transactions.reduce((acc, curr) => {
-            const date = new Date(curr.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            const date = new Date(curr.date).toLocaleDateString('de-DE', { month: 'short', day: 'numeric' });
             if (!acc[date]) {
                 acc[date] = { date, income: 0, expense: 0 };
             }
@@ -38,18 +38,18 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions }) => {
     }, [transactions]);
 
     const formatCurrency = (val: number) => {
-        return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+        return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val);
     };
 
     return (
         <div className="space-y-6 pb-20 md:pb-0">
-            <h1 className="text-2xl font-bold text-white">Dashboard</h1>
+            <h1 className="text-2xl font-bold text-white">Übersicht</h1>
             
             {/* Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
                     <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-slate-400 text-sm font-medium">Total Balance</h3>
+                        <h3 className="text-slate-400 text-sm font-medium">Gesamtsaldo</h3>
                         <div className="p-2 bg-blue-500/20 rounded-lg">
                             <Wallet className="w-6 h-6 text-blue-400" />
                         </div>
@@ -59,7 +59,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions }) => {
 
                 <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
                     <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-slate-400 text-sm font-medium">Income</h3>
+                        <h3 className="text-slate-400 text-sm font-medium">Einnahmen</h3>
                         <div className="p-2 bg-green-500/20 rounded-lg">
                             <TrendingUp className="w-6 h-6 text-green-400" />
                         </div>
@@ -69,7 +69,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions }) => {
 
                 <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
                     <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-slate-400 text-sm font-medium">Expenses</h3>
+                        <h3 className="text-slate-400 text-sm font-medium">Ausgaben</h3>
                         <div className="p-2 bg-red-500/20 rounded-lg">
                             <TrendingDown className="w-6 h-6 text-red-400" />
                         </div>
@@ -80,7 +80,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions }) => {
 
             {/* Chart */}
             <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
-                <h3 className="text-lg font-semibold text-white mb-6">Financial Overview</h3>
+                <h3 className="text-lg font-semibold text-white mb-6">Finanzüberblick</h3>
                 <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={chartData}>
@@ -97,14 +97,19 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions }) => {
                                 fontSize={12} 
                                 tickLine={false} 
                                 axisLine={false}
-                                tickFormatter={(val) => `$${val}`}
+                                tickFormatter={(val) => `€${val}`}
                             />
                             <Tooltip 
                                 contentStyle={{ backgroundColor: '#1e293b', borderColor: '#334155', borderRadius: '8px' }}
                                 itemStyle={{ color: '#fff' }}
+                                formatter={(value: number, name: string) => [
+                                    formatCurrency(value),
+                                    name === 'income' ? 'Einnahmen' : 'Ausgaben'
+                                ]}
+                                labelStyle={{ color: '#94a3b8' }}
                             />
-                            <Bar dataKey="income" fill="#4ade80" radius={[4, 4, 0, 0]} name="Income" />
-                            <Bar dataKey="expense" fill="#f87171" radius={[4, 4, 0, 0]} name="Expense" />
+                            <Bar dataKey="income" fill="#4ade80" radius={[4, 4, 0, 0]} name="Einnahmen" />
+                            <Bar dataKey="expense" fill="#f87171" radius={[4, 4, 0, 0]} name="Ausgaben" />
                         </BarChart>
                     </ResponsiveContainer>
                 </div>
