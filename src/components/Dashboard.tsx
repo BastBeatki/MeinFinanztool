@@ -3,7 +3,7 @@ import React, { useMemo, useState } from 'react';
 // IMPORTANT: Extension .ts added for No-Build compatibility
 import { Transaction, DashboardStats } from '../types.ts';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { TrendingUp, TrendingDown, Wallet, ChevronLeft, ChevronRight, Calendar, Clock, Repeat } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, ChevronLeft, ChevronRight, Calendar, Clock } from 'lucide-react';
 
 interface DashboardProps {
     transactions: Transaction[];
@@ -44,107 +44,18 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions }) => {
         return currentDate.toLocaleDateString('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
     }, [currentDate, viewMode]);
 
-    // --- Recurrence & Filtering Logic ---
+    // --- Data Filtering ---
 
     const filteredTransactions = useMemo(() => {
-        // Helper to check if a date is within the current view
-        const isInCurrentView = (d: Date) => {
-            if (viewMode === 'MONTH') {
-                return d.getMonth() === currentDate.getMonth() && d.getFullYear() === currentDate.getFullYear();
-            } else {
-                return d.toDateString() === currentDate.toDateString();
-            }
-        };
-
-        const result: Transaction[] = [];
-
-        transactions.forEach(tx => {
+        return transactions.filter(tx => {
             const txDate = new Date(tx.date);
-            
-            // 1. Normal Transactions (Non-recurring)
-            if (!tx.recurrence || tx.recurrence === 'none') {
-                if (isInCurrentView(txDate)) {
-                    result.push(tx);
-                }
-                return;
-            }
-
-            // 2. Recurring Transactions Logic
-            // We check if this recurrence *hits* the current view window
-            
-            // Check End Date
-            if (tx.recurrenceEndDate) {
-                const endDate = new Date(tx.recurrenceEndDate);
-                if (viewMode === 'MONTH') {
-                     // If view start is after end date, ignore
-                     const viewStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-                     if (viewStart > endDate) return;
-                } else {
-                    if (currentDate > endDate) return;
-                }
-            }
-
-            // Calculate occurrence
-            let hits = false;
-            
             if (viewMode === 'MONTH') {
-                // Monthly view: Check if recurrence happens this month
-                if (tx.recurrence === 'daily') hits = true; // Always hits a month
-                if (tx.recurrence === 'weekly') hits = true; // Almost always hits
-                if (tx.recurrence === 'monthly') {
-                    // Start date must be before or in current month
-                    const viewEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
-                    if (txDate <= viewEnd) hits = true;
-                }
-                if (tx.recurrence === 'yearly') {
-                    if (txDate.getMonth() === currentDate.getMonth() && txDate.getFullYear() <= currentDate.getFullYear()) hits = true;
-                }
+                return txDate.getMonth() === currentDate.getMonth() && 
+                       txDate.getFullYear() === currentDate.getFullYear();
             } else {
-                // Day View: Check specific day match
-                if (txDate > currentDate) return; // Started in future
-
-                if (tx.recurrence === 'daily') hits = true;
-                if (tx.recurrence === 'weekly') {
-                    if (txDate.getDay() === currentDate.getDay()) hits = true;
-                }
-                if (tx.recurrence === 'monthly') {
-                    if (txDate.getDate() === currentDate.getDate()) hits = true;
-                }
-                if (tx.recurrence === 'yearly') {
-                    if (txDate.getDate() === currentDate.getDate() && txDate.getMonth() === currentDate.getMonth()) hits = true;
-                }
-            }
-
-            if (hits) {
-                // Add a "virtual" transaction instance for display
-                // Note: For 'daily' in 'month' view, this adds ONE entry with the sum of all days? 
-                // To keep it simple for the chart, we treat it as one aggregate or single instance per match logic.
-                // Better approach for stats: Multiply amount if daily/weekly in month view.
-                
-                let multiplier = 1;
-                if (viewMode === 'MONTH') {
-                    if (tx.recurrence === 'daily') {
-                        const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
-                        multiplier = daysInMonth; 
-                        // Adjust if start date is inside this month
-                        if (txDate.getMonth() === currentDate.getMonth() && txDate.getFullYear() === currentDate.getFullYear()) {
-                            multiplier = daysInMonth - txDate.getDate() + 1;
-                        }
-                    }
-                    if (tx.recurrence === 'weekly') multiplier = 4; // Approx
-                }
-
-                result.push({
-                    ...tx,
-                    amount: tx.amount * multiplier,
-                    id: `virtual-${tx.id}-${currentDate.getTime()}`, // Unique ID for React Key
-                    note: `(Wiederkehrend: ${tx.recurrence}) ${tx.note}`,
-                    date: viewMode === 'MONTH' ? new Date(currentDate.getFullYear(), currentDate.getMonth(), txDate.getDate()).toISOString() : currentDate.toISOString() // Project date to current view
-                });
+                return txDate.toISOString().split('T')[0] === currentDate.toISOString().split('T')[0];
             }
         });
-
-        return result;
     }, [transactions, viewMode, currentDate]);
     
     // --- Stats Calculation ---
@@ -174,17 +85,14 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions }) => {
             });
 
             filteredTransactions.forEach(tx => {
-                const d = new Date(tx.date);
-                // Handle virtual projection dates correctly
-                const day = d.getDate();
-                if (day >= 1 && day <= daysInMonth) {
-                    if (tx.type === 'income') data[day - 1].income += tx.amount;
-                    else data[day - 1].expense += tx.amount;
-                }
+                const day = new Date(tx.date).getDate();
+                if (tx.type === 'income') data[day - 1].income += tx.amount;
+                else data[day - 1].expense += tx.amount;
             });
             return data;
         } else {
-            // Group by Category
+            // Group by transaction (or simplified single bars for day view)
+            // For Day View, we just show a simplified summary or categories
             const grouped = filteredTransactions.reduce((acc, curr) => {
                 if (!acc[curr.category]) acc[curr.category] = { name: curr.category, income: 0, expense: 0 };
                 if (curr.type === 'income') acc[curr.category].income += curr.amount;
@@ -235,18 +143,16 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions }) => {
             
             {/* Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden">
-                    <div className="flex items-center justify-between mb-4 relative z-10">
-                        <h3 className="text-slate-400 text-sm font-medium">Saldo ({viewMode === 'MONTH' ? 'Monat' : 'Tag'})</h3>
+                <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-slate-400 text-sm font-medium">Saldo (Zeitraum)</h3>
                         <div className="p-2 bg-blue-500/20 rounded-lg">
                             <Wallet className="w-6 h-6 text-blue-400" />
                         </div>
                     </div>
-                    <p className={`text-3xl font-bold relative z-10 ${stats.totalBalance >= 0 ? 'text-white' : 'text-red-400'}`}>
+                    <p className={`text-3xl font-bold ${stats.totalBalance >= 0 ? 'text-white' : 'text-red-400'}`}>
                         {formatCurrency(stats.totalBalance)}
                     </p>
-                    {/* Background accent */}
-                    <div className="absolute -bottom-6 -right-6 w-24 h-24 bg-blue-500/10 rounded-full blur-2xl"></div>
                 </div>
 
                 <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
@@ -273,7 +179,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions }) => {
             {/* Chart */}
             <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
                 <h3 className="text-lg font-semibold text-white mb-6">
-                    {viewMode === 'MONTH' ? 'Finanzverlauf' : 'Kategorien-Übersicht'}
+                    {viewMode === 'MONTH' ? 'Verlauf im Monat' : 'Kategorien am Tag'}
                 </h3>
                 <div className="h-64 w-full">
                     {filteredTransactions.length > 0 ? (
@@ -304,9 +210,8 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions }) => {
                             </BarChart>
                         </ResponsiveContainer>
                     ) : (
-                        <div className="h-full flex flex-col items-center justify-center text-slate-500 gap-2">
-                            <Calendar className="w-8 h-8 opacity-20" />
-                            <p>Keine Daten für diesen Zeitraum</p>
+                        <div className="h-full flex items-center justify-center text-slate-500">
+                            Keine Daten für diesen Zeitraum
                         </div>
                     )}
                 </div>

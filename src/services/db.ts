@@ -117,18 +117,6 @@ export class DBService {
         });
     }
 
-    async resetDatabase(): Promise<void> {
-        if (!this.db) return;
-        await this.clearAll();
-        // Re-seed directly
-        for (const item of SEED_DATA) {
-            await this.addTransaction({
-                ...item,
-                id: crypto.randomUUID()
-            } as Transaction);
-        }
-    }
-
     async importData(data: Transaction[]): Promise<void> {
         await this.clearAll();
         for (const item of data) {

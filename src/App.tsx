@@ -57,11 +57,6 @@ const App: React.FC = () => {
         await refreshData();
     };
 
-    const handleReset = async () => {
-        await dbService.resetDatabase();
-        await refreshData();
-    };
-
     if (loading) {
         return (
             <div className="h-screen w-full flex items-center justify-center bg-slate-950 text-slate-400 flex-col gap-4">
@@ -119,7 +114,7 @@ const App: React.FC = () => {
                     {view === AppView.DASHBOARD && <Dashboard transactions={transactions} />}
                     {view === AppView.TRANSACTIONS && <TransactionList transactions={transactions} onDelete={handleDeleteTransaction} />}
                     {view === AppView.ADD && <TransactionForm onSubmit={handleAddTransaction} onCancel={() => setView(AppView.DASHBOARD)} />}
-                    {view === AppView.SETTINGS && <Settings transactions={transactions} onImport={handleImport} onReset={handleReset} />}
+                    {view === AppView.SETTINGS && <Settings transactions={transactions} onImport={handleImport} />}
                 </div>
             </main>
 

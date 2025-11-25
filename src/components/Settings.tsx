@@ -2,15 +2,14 @@
 import React, { useRef, useState } from 'react';
 // IMPORTANT: Extension .ts added for No-Build compatibility
 import { Transaction } from '../types.ts';
-import { Download, Upload, AlertTriangle, CheckCircle, Database, RefreshCw, Trash2 } from 'lucide-react';
+import { Download, Upload, AlertTriangle, CheckCircle, Database } from 'lucide-react';
 
 interface SettingsProps {
     transactions: Transaction[];
     onImport: (data: Transaction[]) => Promise<void>;
-    onReset: () => Promise<void>;
 }
 
-const Settings: React.FC<SettingsProps> = ({ transactions, onImport, onReset }) => {
+const Settings: React.FC<SettingsProps> = ({ transactions, onImport }) => {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [status, setStatus] = useState<{type: 'success' | 'error', msg: string} | null>(null);
 
@@ -49,14 +48,6 @@ const Settings: React.FC<SettingsProps> = ({ transactions, onImport, onReset }) 
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
-    const handleReset = async () => {
-        if (confirm("WARNUNG: Alle Daten werden gelöscht und auf die Standard-Beispieldaten zurückgesetzt. Fortfahren?")) {
-            await onReset();
-            setStatus({ type: 'success', msg: 'Datenbank zurückgesetzt!' });
-            setTimeout(() => setStatus(null), 3000);
-        }
-    };
-
     return (
         <div className="max-w-2xl mx-auto pb-20 md:pb-0 space-y-6">
             <h1 className="text-2xl font-bold text-white">Einstellungen</h1>
@@ -76,22 +67,22 @@ const Settings: React.FC<SettingsProps> = ({ transactions, onImport, onReset }) 
                         </div>
                         <h2 className="text-lg font-semibold text-white">Datenverwaltung</h2>
                     </div>
-                    <p className="text-slate-400 text-sm">Verwalte deine Finanzdaten sicher und lokal.</p>
+                    <p className="text-slate-400 text-sm">Exportiere deine Daten als Backup oder übertrage sie auf ein anderes Gerät.</p>
                 </div>
 
                 <div className="p-6 grid gap-6">
                     {/* Export */}
                     <div className="flex items-center justify-between">
                         <div>
-                            <h3 className="text-white font-medium">Backup erstellen</h3>
-                            <p className="text-slate-500 text-sm">Download als JSON Datei</p>
+                            <h3 className="text-white font-medium">Daten Exportieren</h3>
+                            <p className="text-slate-500 text-sm">Download als JSON Datei ({transactions.length} Einträge)</p>
                         </div>
                         <button
                             onClick={handleExport}
                             className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-lg transition-colors"
                         >
                             <Download className="w-4 h-4" />
-                            Backup
+                            Export
                         </button>
                     </div>
 
@@ -100,8 +91,8 @@ const Settings: React.FC<SettingsProps> = ({ transactions, onImport, onReset }) 
                     {/* Import */}
                     <div className="flex items-center justify-between">
                         <div>
-                            <h3 className="text-white font-medium">Backup wiederherstellen</h3>
-                            <p className="text-slate-500 text-sm">Importiert eine vorhandene JSON Datei</p>
+                            <h3 className="text-white font-medium">Daten Importieren</h3>
+                            <p className="text-slate-500 text-sm">Wiederherstellen (Überschreibt aktuelle Daten)</p>
                         </div>
                         <div>
                             <input
@@ -120,29 +111,12 @@ const Settings: React.FC<SettingsProps> = ({ transactions, onImport, onReset }) 
                             </button>
                         </div>
                     </div>
-
-                    <div className="h-px bg-slate-700/50"></div>
-
-                     {/* Reset */}
-                     <div className="flex items-center justify-between">
-                        <div>
-                            <h3 className="text-red-400 font-medium">Datenbank zurücksetzen</h3>
-                            <p className="text-slate-500 text-sm">Löscht alles und lädt die Beispieldaten</p>
-                        </div>
-                        <button
-                            onClick={handleReset}
-                            className="flex items-center gap-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 px-4 py-2 rounded-lg transition-colors"
-                        >
-                            <Trash2 className="w-4 h-4" />
-                            Reset
-                        </button>
-                    </div>
                 </div>
             </div>
             
              <div className="text-center text-slate-600 text-xs mt-10">
-                <p>FinanceFlow v1.2.0 (German Update)</p>
-                <p>Offline-First / IndexedDB Storage</p>
+                <p>FinanceFlow v1.1.0</p>
+                <p>Lokal gespeichert via IndexedDB</p>
             </div>
         </div>
     );
