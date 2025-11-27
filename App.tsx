@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, isValidElement } from 'react';
 import { dbService } from './services/db';
 import { Transaction, AppView, RecurringRule } from './types';

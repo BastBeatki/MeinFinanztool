@@ -1,3 +1,4 @@
+
 export type TransactionType = 'income' | 'expense';
 export type PaymentMethod = 'cash' | 'digital';
 export type TransactionStatus = 'pending' | 'completed';

@@ -1,3 +1,4 @@
+
 import { Transaction, RecurringRule } from '../types';
 
 const DB_NAME = 'FinanceFlowDB';
@@ -42,9 +43,77 @@ export class DBService {
 
             request.onsuccess = async (event) => {
                 this.db = (event.target as IDBOpenDBRequest).result;
+                await this.seedInitialRules(); // Load user's CSV logic
                 await this.processRecurringRules(); // Check and generate monthly items
                 resolve();
             };
+        });
+    }
+
+    // Seeds the database with the user's specific CSV data structure
+    private async seedInitialRules(): Promise<void> {
+        if (!this.db) return;
+        
+        const rulesCount = await this.countRules();
+        if (rulesCount > 0) return; // Already seeded
+
+        const initialRules: Omit<RecurringRule, 'id' | 'createdAt'>[] = [
+            // Income
+            { type: 'income', category: 'Bürgergeld', amount: 363.00, note: 'Ende des Monats (Minijobs)', method: 'digital', frequency: 'monthly', dayOfMonth: 28, active: true },
+            { type: 'income', category: 'Gehalt Reporter', amount: 170.89, note: 'Ende des Monats (Variabel)', method: 'digital', frequency: 'monthly', dayOfMonth: 28, active: true },
+            { type: 'income', category: 'Gehalt TEDi', amount: 350.00, note: 'Mitte des Monats', method: 'digital', frequency: 'monthly', dayOfMonth: 15, active: true },
+            
+            // Fixed Expenses
+            { type: 'expense', category: 'Miete/Essen', amount: 227.00, note: 'Abgabe an MAMA', method: 'digital', frequency: 'monthly', dayOfMonth: 1, active: true },
+            { type: 'expense', category: 'O2 Vertrag', amount: 59.00, note: 'Ende des Monats', method: 'digital', frequency: 'monthly', dayOfMonth: 28, active: true },
+            { type: 'expense', category: 'iPhone 13 Pro', amount: 26.25, note: 'Rate bis 28.8.2026', method: 'digital', frequency: 'monthly', dayOfMonth: 1, active: true },
+            { type: 'expense', category: 'iPhone 16 Pro', amount: 37.00, note: 'Rate bis 28.7.2028', method: 'digital', frequency: 'monthly', dayOfMonth: 1, active: true },
+            { type: 'expense', category: 'Spotify', amount: 10.99, note: 'Ende des Monats', method: 'digital', frequency: 'monthly', dayOfMonth: 28, active: true },
+            { type: 'expense', category: 'Entgeltabrechnung', amount: 9.95, note: 'Ende des Monats', method: 'digital', frequency: 'monthly', dayOfMonth: 28, active: true },
+            { type: 'expense', category: 'Joyn', amount: 6.99, note: 'Mitte des Monats', method: 'digital', frequency: 'monthly', dayOfMonth: 15, active: true },
+            { type: 'expense', category: 'RTL PLUS', amount: 7.99, note: 'Ca. 20.-23.', method: 'digital', frequency: 'monthly', dayOfMonth: 21, active: true },
+            
+            // Variable Budgets (The "Pots")
+            { type: 'expense', category: 'Lebensmittel', amount: 150.00, note: 'Budget (420)', method: 'cash', frequency: 'monthly', dayOfMonth: 1, active: true },
+            { type: 'expense', category: 'Wochenende', amount: 120.00, note: 'Geld zum Leben für Wochenende', method: 'cash', frequency: 'monthly', dayOfMonth: 1, active: true },
+            { type: 'expense', category: 'Wochentage', amount: 120.00, note: 'Geld zum Leben (Mo-Fr)', method: 'cash', frequency: 'monthly', dayOfMonth: 1, active: true },
+            { type: 'expense', category: 'Rauchen', amount: 40.00, note: 'Monatsbudget', method: 'cash', frequency: 'monthly', dayOfMonth: 1, active: true },
+            
+            // Yearly
+             { type: 'expense', category: 'Versicherung', amount: 40.00, note: 'Signal IDUNA (Nur Januar)', method: 'digital', frequency: 'monthly', dayOfMonth: 15, active: false }, // Set active:false initially, logic to enable in Jan could be added
+        ];
+
+        for (const rule of initialRules) {
+            await this.addRule({
+                ...rule,
+                id: crypto.randomUUID(),
+                createdAt: Date.now()
+            } as RecurringRule);
+        }
+
+        // Add an initial balance correction transaction to match CSV start
+        await this.addTransaction({
+            id: crypto.randomUUID(),
+            date: new Date().toISOString().split('T')[0],
+            amount: 1399.69,
+            type: 'income',
+            category: 'Startguthaben',
+            note: 'Übertrag aus Vormonat',
+            method: 'digital',
+            status: 'completed',
+            isRecurring: false,
+            createdAt: Date.now()
+        });
+    }
+
+    private async countRules(): Promise<number> {
+        return new Promise((resolve) => {
+            if (!this.db) return resolve(0);
+            const transaction = this.db.transaction([STORE_RULES], 'readonly');
+            const store = transaction.objectStore(STORE_RULES);
+            const request = store.count();
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => resolve(0);
         });
     }
 

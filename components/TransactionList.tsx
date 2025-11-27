@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Transaction } from '../types';
 import { Trash2, ArrowUpRight, ArrowDownLeft, Search, CreditCard, Banknote, Repeat, CheckSquare, Square } from 'lucide-react';

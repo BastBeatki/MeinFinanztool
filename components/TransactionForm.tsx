@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { TransactionType, Transaction, PaymentMethod, RecurrenceFrequency, RecurringRule } from '../types';
 import { PlusCircle, Loader2, Repeat, CreditCard, Banknote } from 'lucide-react';
