@@ -42,6 +42,17 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
         return new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
     });
 
+    // Helper: Count occurrences of a specific weekday in a month (0=Sun, 1=Mon, ..., 5=Fri, 6=Sat)
+    const countWeekdaysInMonth = (year: number, month: number, dayIndex: number) => {
+        let count = 0;
+        const d = new Date(year, month, 1);
+        while (d.getMonth() === month) {
+            if (d.getDay() === dayIndex) count++;
+            d.setDate(d.getDate() + 1);
+        }
+        return count > 0 ? count : 1; // Prevent division by zero
+    };
+
     // 1. Calculate Stats
     const stats = useMemo(() => {
         const now = new Date();
@@ -104,62 +115,119 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
         };
     }, [transactions, forecastDate]);
 
-    // 2. Debt Free Forecast Calculation
-    const debtFreePrediction = useMemo(() => {
-        if (stats.bankBalance >= 0) return { status: 'positive', date: 'Jetzt' };
+    // 2. "Permanently Positive" Forecast Calculation
+    const permanentPositiveForecast = useMemo(() => {
+        // Simulation settings
+        const SIMULATION_YEARS = 5;
+        const SIM_DAYS = 365 * SIMULATION_YEARS;
+        
+        let simBalance = stats.bankBalance;
+        // If currently negative, track the last day it is negative.
+        // If currently positive, we still need to check if it drops negative in future.
+        let lastNegativeDate: Date | null = simBalance < 0 ? new Date() : null;
 
-        // Calculate Monthly Net (Recurring only) for Bank
-        let monthlyIncome = 0;
-        let monthlyExpense = 0;
+        const now = new Date();
+        const startSim = new Date(now);
+        startSim.setDate(startSim.getDate() + 1); // Start simulation from tomorrow
+        startSim.setHours(0,0,0,0);
 
-        recurringRules.forEach(rule => {
-            if (rule.active && rule.account === 'bank') {
-                if (rule.type === 'income') monthlyIncome += rule.amount;
-                else monthlyExpense += rule.amount;
+        // Map future non-recurring transactions for faster lookup
+        const futureOneTimeMap = new Map<string, Transaction[]>();
+        transactions.forEach(tx => {
+            if (!tx.isRecurring && new Date(tx.date) > now && tx.account === 'bank') {
+                const list = futureOneTimeMap.get(tx.date) || [];
+                list.push(tx);
+                futureOneTimeMap.set(tx.date, list);
             }
         });
 
-        const monthlyNet = monthlyIncome - monthlyExpense;
+        for (let i = 0; i < SIM_DAYS; i++) {
+            const d = new Date(startSim);
+            d.setDate(d.getDate() + i);
+            const dateStr = d.toISOString().split('T')[0];
+            
+            const day = d.getDate();
+            const month = d.getMonth(); // 0-11
+            const year = d.getFullYear();
+            const dayOfWeek = d.getDay(); // 0=Sun
 
-        if (monthlyNet <= 0) {
-            return { status: 'impossible', date: 'Nie (Ausgaben > Einnahmen)' };
+            // A. Apply Fixed Recurring Rules
+            recurringRules.forEach(rule => {
+                if (rule.active && rule.account === 'bank' && rule.dayOfMonth === day) {
+                    // Logic for specific skips (copied from DB/Chart logic)
+                    if (rule.category === 'Gehalt TEDi' && year === 2025 && month === 10) return;
+
+                    if (rule.type === 'income') simBalance += rule.amount;
+                    else simBalance -= rule.amount;
+                }
+            });
+
+            // B. Apply One-time Future Transactions
+            const oneTimeTxs = futureOneTimeMap.get(dateStr);
+            if (oneTimeTxs) {
+                oneTimeTxs.forEach(tx => {
+                    if (tx.type === 'income') simBalance += tx.amount;
+                    else simBalance -= tx.amount;
+                });
+            }
+
+            // C. Apply Pot Simulation (Spending Habits)
+            // 420 (1st and 15th)
+            const isNov25 = year === 2025 && month === 10;
+            const limit420 = isNov25 ? 150 : 100;
+            if (day === 1 || day === 15) {
+                simBalance -= (limit420 / 2);
+            }
+
+            // Weekend (Fridays)
+            if (dayOfWeek === 5) {
+                const fridays = countWeekdaysInMonth(year, month, 5);
+                simBalance -= (120 / fridays);
+            }
+
+            // Weekdays (Mondays)
+            if (dayOfWeek === 1) {
+                const mondays = countWeekdaysInMonth(year, month, 1);
+                simBalance -= (120 / mondays);
+            }
+
+            // Smoking (1, 8, 15, 22)
+            if ([1, 8, 15, 22].includes(day)) {
+                simBalance -= 10; 
+            }
+
+            // Track Negative Status
+            if (simBalance < 0) {
+                lastNegativeDate = new Date(d);
+            }
         }
 
-        // Simulate months until balance > 0
-        let tempBalance = stats.bankBalance;
-        let monthsToAdd = 0;
+        if (!lastNegativeDate) {
+            return { status: 'positive', date: 'Sofort' };
+        }
         
-        while (tempBalance < 0 && monthsToAdd < 120) {
-            tempBalance += monthlyNet;
-            monthsToAdd++;
+        // If the very last day of simulation is still negative, we haven't recovered
+        const lastSimDay = new Date(startSim);
+        lastSimDay.setDate(lastSimDay.getDate() + SIM_DAYS - 1);
+        
+        if (lastNegativeDate.getTime() >= lastSimDay.getTime()) {
+             return { status: 'impossible', date: '> 5 Jahre' };
         }
 
-        if (monthsToAdd >= 120) return { status: 'impossible', date: '> 10 Jahre' };
-
-        const futureDate = new Date();
-        futureDate.setMonth(futureDate.getMonth() + monthsToAdd);
+        // The day AFTER the last negative date is when we become stably positive
+        const stableDate = new Date(lastNegativeDate);
+        stableDate.setDate(stableDate.getDate() + 1);
         
         const formatter = new Intl.DateTimeFormat('de-DE', { month: 'long', year: 'numeric' });
-        return { status: 'future', date: formatter.format(futureDate) };
+        return { status: 'future', date: formatter.format(stableDate) };
 
-    }, [stats.bankBalance, recurringRules]);
+    }, [stats.bankBalance, recurringRules, transactions]);
 
     // 3. Chart Data: Account Balance Trend (Real + Simulation)
     const chartData = useMemo(() => {
         const now = new Date();
         const endDate = new Date(forecastDate);
         const data = [];
-
-        // Helper: Count occurrences of a specific weekday in a month (0=Sun, 1=Mon, ..., 5=Fri, 6=Sat)
-        const countWeekdaysInMonth = (year: number, month: number, dayIndex: number) => {
-            let count = 0;
-            const d = new Date(year, month, 1);
-            while (d.getMonth() === month) {
-                if (d.getDay() === dayIndex) count++;
-                d.setDate(d.getDate() + 1);
-            }
-            return count > 0 ? count : 1; // Prevent division by zero
-        };
 
         // --- PART 1: Historical Data (Real Transactions) ---
         // Find rough start date for chart (Start of this month or earliest visible relevant date)
@@ -208,7 +276,19 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                     }
                 });
 
-                // B. Pot Simulation (Spending Habits)
+                // B. One-time Future Transactions from DB
+                // We use !isRecurring to find manually added future transactions (e.g. Refund)
+                const futureOneTimeTxs = transactions.filter(tx => 
+                    tx.date === dateStr && 
+                    tx.account === 'bank' && 
+                    !tx.isRecurring
+                );
+                futureOneTimeTxs.forEach(tx => {
+                    if (tx.type === 'income') runningBalance += tx.amount;
+                    else runningBalance -= tx.amount;
+                });
+
+                // C. Pot Simulation (Spending Habits)
                 
                 // 1. Pot 420: Split 50/50 on 1st and 15th
                 // Nov 2025 Exception: 150 total, otherwise 100
@@ -405,22 +485,22 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                     </p>
                 </div>
 
-                {/* Debt Free Forecast */}
+                {/* Permanent Positive Forecast */}
                 <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden">
                      <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2">
                             <div className="p-2 bg-purple-500/20 rounded-lg">
-                                <Rocket className="w-5 h-5 text-purple-400" />
+                                <TrendingUp className="w-5 h-5 text-purple-400" />
                             </div>
-                            <h3 className="text-slate-300 font-medium">Schuldenfrei</h3>
+                            <h3 className="text-slate-300 font-medium">Dauerhaft im Plus</h3>
                         </div>
                     </div>
                     <div className="flex flex-col h-full justify-between pb-2">
-                        <p className="text-2xl font-bold text-purple-100">{debtFreePrediction.date}</p>
+                        <p className="text-2xl font-bold text-purple-100">{permanentPositiveForecast.date}</p>
                         <p className="text-xs text-slate-500 mt-1">
-                             {debtFreePrediction.status === 'positive' 
-                                ? 'Konto im Plus.' 
-                                : 'Prognose Girokonto.'}
+                             {permanentPositiveForecast.status === 'positive' 
+                                ? 'Konto gedeckt.' 
+                                : 'Datum, ab dem das Konto nicht mehr ins Minus fällt.'}
                         </p>
                     </div>
                 </div>

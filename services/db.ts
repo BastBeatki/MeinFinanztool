@@ -2,7 +2,7 @@
 import { Transaction, RecurringRule } from '../types';
 
 const DB_NAME = 'FinanceFlowDB';
-const DB_VERSION = 14; // Bumped for Balance Fix Target -1399.61
+const DB_VERSION = 15; // Bumped for Wankendorfer Refund
 const STORE_TRANSACTIONS = 'transactions';
 const STORE_RULES = 'recurring_rules';
 
@@ -119,6 +119,27 @@ export class DBService {
             }
             startTx.note = (startTx.note || '') + ' (KorrV13)';
             txStore.put(startTx);
+        }
+
+        // 5. Add Wankendorfer Eutin Refund (Apr 2026)
+        const refundTx = txs.find(t => t.category === 'Rückzahlung Genossenschaft' && t.date.startsWith('2026-04'));
+        if (!refundTx) {
+            console.log("Adding Wankendorfer refund transaction");
+            const newTx: Transaction = {
+                id: crypto.randomUUID(),
+                date: '2026-04-01',
+                amount: 750.00,
+                type: 'income',
+                category: 'Rückzahlung Genossenschaft',
+                note: 'Wankendorfer Eutin',
+                method: 'digital',
+                account: 'bank',
+                status: 'pending',
+                isRecurring: false,
+                createdAt: Date.now()
+            };
+            txStore.add(newTx);
+            txs.push(newTx);
         }
 
         // 4. Force Balance to -1399.61 (User Request V14)
