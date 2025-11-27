@@ -150,6 +150,17 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
         const endDate = new Date(forecastDate);
         const data = [];
 
+        // Helper: Count occurrences of a specific weekday in a month (0=Sun, 1=Mon, ..., 5=Fri, 6=Sat)
+        const countWeekdaysInMonth = (year: number, month: number, dayIndex: number) => {
+            let count = 0;
+            const d = new Date(year, month, 1);
+            while (d.getMonth() === month) {
+                if (d.getDay() === dayIndex) count++;
+                d.setDate(d.getDate() + 1);
+            }
+            return count > 0 ? count : 1; // Prevent division by zero
+        };
+
         // --- PART 1: Historical Data (Real Transactions) ---
         // Find rough start date for chart (Start of this month or earliest visible relevant date)
         const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -180,14 +191,49 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                     else runningBalance -= tx.amount;
                 });
             } else {
-                // FUTURE
+                // FUTURE SIMULATION
                 const dayOfMonth = d.getDate();
+                const dayOfWeek = d.getDay(); // 0 = Sun, 1 = Mon, ... 5 = Fri
+                const currentMonth = d.getMonth();
+                const currentYear = d.getFullYear();
+
+                // A. Fixed Recurring Rules (Rent, Salary, etc.)
                 recurringRules.forEach(rule => {
                     if (rule.active && rule.account === 'bank' && rule.dayOfMonth === dayOfMonth) {
+                        // Skip Tedi in Nov 2025 exception
+                        if (rule.category === 'Gehalt TEDi' && currentYear === 2025 && currentMonth === 10) return;
+
                         if (rule.type === 'income') runningBalance += rule.amount;
                         else runningBalance -= rule.amount;
                     }
                 });
+
+                // B. Pot Simulation (Spending Habits)
+                
+                // 1. Pot 420: Split 50/50 on 1st and 15th
+                // Nov 2025 Exception: 150 total, otherwise 100
+                const isNov25 = currentYear === 2025 && currentMonth === 10;
+                const limit420 = isNov25 ? 150 : 100;
+                if (dayOfMonth === 1 || dayOfMonth === 15) {
+                    runningBalance -= (limit420 / 2);
+                }
+
+                // 2. Pot Weekend: Evenly split across Fridays
+                const fridaysInMonth = countWeekdaysInMonth(currentYear, currentMonth, 5); // 5 = Friday
+                if (dayOfWeek === 5) {
+                    runningBalance -= (120 / fridaysInMonth);
+                }
+
+                // 3. Pot Weekdays: Evenly split across Mondays
+                const mondaysInMonth = countWeekdaysInMonth(currentYear, currentMonth, 1); // 1 = Monday
+                if (dayOfWeek === 1) {
+                    runningBalance -= (120 / mondaysInMonth);
+                }
+
+                // 4. Pot Smoking: 40 total, divided by 4, deducted on 1st, 8th, 15th, 22nd
+                if ([1, 8, 15, 22].includes(dayOfMonth)) {
+                    runningBalance -= (40 / 4);
+                }
             }
 
             const shortDate = new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit' }).format(d);
