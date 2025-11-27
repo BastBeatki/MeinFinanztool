@@ -2,7 +2,7 @@
 import React, { useMemo, useState } from 'react';
 import { Transaction, RecurringRule, AccountType } from '../types';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
-import { Landmark, Coins, TrendingUp, AlertCircle, Plus, Calendar, X, Rocket } from 'lucide-react';
+import { Landmark, Coins, TrendingUp, AlertCircle, Plus, Calendar, X, Rocket, Wallet, HeartHandshake } from 'lucide-react';
 
 interface DashboardProps {
     transactions: Transaction[];
@@ -10,17 +10,21 @@ interface DashboardProps {
     mode: 'monthly' | 'daily';
     setMode: (mode: 'monthly' | 'daily') => void;
     onAddTransaction: (tx: Omit<Transaction, 'id' | 'createdAt'>) => Promise<void>;
+    onUpdateRule?: (rule: RecurringRule) => Promise<void>;
 }
 
 // Fixed Budget Configurations
 const BUDGET_POTS = [
-    { id: 'pot_420', name: '420 (Gras)', limit: 150, category: '420' },
+    // Standard limit for 420 is now 100, exception handled in logic
+    { id: 'pot_420', name: '420 (Gras)', limit: 100, category: '420' },
     { id: 'pot_we', name: 'Wochenende', limit: 120, category: 'Wochenende' },
     { id: 'pot_week', name: 'Unter der Woche', limit: 120, category: 'Wochentage' },
     { id: 'pot_smoke', name: 'Rauchen', limit: 40, category: 'Rauchen' },
 ];
 
-const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mode, setMode, onAddTransaction }) => {
+const DEBT_TOTAL_MAMA = 1000;
+
+const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mode, setMode, onAddTransaction, onUpdateRule }) => {
     
     // Pot Modal State
     const [selectedPot, setSelectedPot] = useState<typeof BUDGET_POTS[0] | null>(null);
@@ -28,6 +32,10 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
     const [potDate, setPotDate] = useState(new Date().toISOString().split('T')[0]);
     const [potAccount, setPotAccount] = useState<AccountType>('cash'); // Default Cash, but changeable
     
+    // Debt Config State
+    const [showDebtConfig, setShowDebtConfig] = useState(false);
+    const [debtInstallment, setDebtInstallment] = useState('50');
+
     // Forecast Date State (Default: End of Current Month)
     const [forecastDate, setForecastDate] = useState(() => {
         const now = new Date();
@@ -42,6 +50,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
 
         let bankBalance = 0;
         let cashBalance = 0;
+        let debtRepaid = 0;
         
         // Calculate Actual Balances (Completed transactions up to today)
         transactions.forEach(tx => {
@@ -49,10 +58,21 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                 const amt = tx.type === 'income' ? tx.amount : -tx.amount;
                 if (tx.account === 'bank') bankBalance += amt;
                 else cashBalance += amt;
+
+                // Track Repayment
+                if (tx.category === 'Rückzahlung Mama' && tx.type === 'expense') {
+                    debtRepaid += tx.amount;
+                }
             }
         });
 
         // Calculate Pot Usage (Current Month)
+        // 420 Logic: Check if we are viewing the current real-world month
+        const isCurrentRealMonth = (
+            new Date(forecastDate).getMonth() === now.getMonth() && 
+            new Date(forecastDate).getFullYear() === now.getFullYear()
+        );
+
         const potStats = BUDGET_POTS.map(pot => {
             const spent = transactions
                 .filter(tx => 
@@ -63,15 +83,26 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                 )
                 .reduce((sum, tx) => sum + tx.amount, 0);
             
-            return { ...pot, spent, remaining: pot.limit - spent };
+            // Exception Logic for 420: If it's the current month (now), limit is 150. Otherwise 100.
+            let activeLimit = pot.limit;
+            if (pot.id === 'pot_420' && isCurrentRealMonth) {
+                activeLimit = 150;
+            }
+            
+            return { ...pot, limit: activeLimit, spent, remaining: activeLimit - spent };
         });
+
+        const remainingDebt = DEBT_TOTAL_MAMA - debtRepaid;
+        const totalNetWorth = bankBalance + cashBalance - remainingDebt;
 
         return { 
             bankBalance, 
             cashBalance, 
-            potStats
+            potStats,
+            remainingDebt,
+            totalNetWorth
         };
-    }, [transactions]);
+    }, [transactions, forecastDate]);
 
     // 2. Debt Free Forecast Calculation
     const debtFreePrediction = useMemo(() => {
@@ -98,7 +129,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
         let tempBalance = stats.bankBalance;
         let monthsToAdd = 0;
         
-        // Limit to 120 months (10 years) to prevent infinite loops
         while (tempBalance < 0 && monthsToAdd < 120) {
             tempBalance += monthlyNet;
             monthsToAdd++;
@@ -117,7 +147,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
     // 3. Chart Data: Account Balance Trend (Real + Simulation)
     const chartData = useMemo(() => {
         const now = new Date();
-        const todayStr = now.toISOString().split('T')[0];
         const endDate = new Date(forecastDate);
         const data = [];
 
@@ -131,7 +160,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
         // Calculate running balance up to "yesterday"
         let runningBalance = 0;
         
-        // We need to calculate the balance BEFORE the start date of the chart to have a correct starting point
         sortedTx.forEach(tx => {
             if (tx.status === 'completed' && tx.account === 'bank' && new Date(tx.date) < startDate) {
                  if (tx.type === 'income') runningBalance += tx.amount;
@@ -139,23 +167,21 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
             }
         });
 
-        // Loop Day by Day from StartDate until EndDate
+        // Loop Day by Day
         for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
             const dateStr = d.toISOString().split('T')[0];
             const isFuture = d > now;
 
             if (!isFuture) {
-                // REALITY: Use actual transactions
+                // REALITY
                 const dailyTxs = sortedTx.filter(tx => tx.date === dateStr && tx.account === 'bank' && tx.status === 'completed');
                 dailyTxs.forEach(tx => {
                     if (tx.type === 'income') runningBalance += tx.amount;
                     else runningBalance -= tx.amount;
                 });
             } else {
-                // FUTURE: Simulate based on Recurring Rules
+                // FUTURE
                 const dayOfMonth = d.getDate();
-                
-                // Find rules that trigger on this day
                 recurringRules.forEach(rule => {
                     if (rule.active && rule.account === 'bank' && rule.dayOfMonth === dayOfMonth) {
                         if (rule.type === 'income') runningBalance += rule.amount;
@@ -164,15 +190,14 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                 });
             }
 
-            // Create formatted dates for UI
             const shortDate = new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit' }).format(d);
             const tooltipDate = new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: 'long', year: 'numeric' }).format(d);
 
             data.push({
                 day: d.getDate(),
                 fullDate: dateStr,
-                shortDate, // "01.12."
-                tooltipDate, // "01. Dezember 2025"
+                shortDate,
+                tooltipDate,
                 balance: runningBalance,
                 isFuture
             });
@@ -180,8 +205,11 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
         return data;
     }, [transactions, recurringRules, forecastDate]);
 
-    // Derived Projected Balance from Chart
+    // Derived Projected Balance
     const projectedBalance = chartData.length > 0 ? chartData[chartData.length - 1].balance : stats.bankBalance;
+
+    // Debt Rule Helper
+    const mamaDebtRule = recurringRules.find(r => r.category === 'Rückzahlung Mama');
 
     const handlePotSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -192,7 +220,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
             category: selectedPot.category,
             date: potDate,
             type: 'expense',
-            account: potAccount, // Use user selection
+            account: potAccount, 
             method: potAccount === 'cash' ? 'cash' : 'digital',
             note: `Abbuchung aus Topf: ${selectedPot.name}`,
             status: 'completed',
@@ -204,6 +232,16 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
         setPotDate(new Date().toISOString().split('T')[0]);
     };
 
+    const toggleDebtRule = async (active: boolean) => {
+        if (!mamaDebtRule || !onUpdateRule) return;
+        await onUpdateRule({
+            ...mamaDebtRule,
+            active,
+            amount: parseFloat(debtInstallment) || mamaDebtRule.amount
+        });
+        setShowDebtConfig(false);
+    };
+
     const formatCurrency = (val: number) => {
         return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val);
     };
@@ -212,9 +250,16 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
         <div className="space-y-6 pb-20 md:pb-0">
             {/* Header / Forecast Control */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <h1 className="text-2xl font-bold text-white">
-                    {mode === 'daily' ? 'Finanzstatus: Heute' : 'Prognose & Verlauf'}
-                </h1>
+                <div>
+                    <h1 className="text-2xl font-bold text-white">
+                        {mode === 'daily' ? 'Finanzstatus: Heute' : 'Prognose & Verlauf'}
+                    </h1>
+                    {/* Net Worth Display */}
+                    <div className="flex items-center gap-2 text-slate-400 text-sm mt-1">
+                        <Wallet className="w-4 h-4" />
+                        <span>Gesamtvermögen (inkl. Schulden): <span className={stats.totalNetWorth >= 0 ? 'text-green-400 font-medium' : 'text-red-400 font-medium'}>{formatCurrency(stats.totalNetWorth)}</span></span>
+                    </div>
+                </div>
                 
                 <div className="flex items-center gap-3 bg-slate-900 p-1.5 rounded-lg border border-slate-800 w-fit">
                     <div className="flex bg-slate-950 rounded-md overflow-hidden">
@@ -251,7 +296,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
             </div>
             
             {/* 1. Main Balances */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Bank Account */}
                 <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden">
                     <div className="flex items-center justify-between mb-4">
@@ -263,21 +308,13 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                         </div>
                     </div>
                     {mode === 'daily' ? (
-                        <>
-                             <p className={`text-4xl font-bold tracking-tight ${stats.bankBalance >= 0 ? 'text-white' : 'text-red-400'}`}>
-                                {formatCurrency(stats.bankBalance)}
-                            </p>
-                            <p className="text-sm text-slate-500 mt-1">Aktuell verfügbar</p>
-                        </>
+                         <p className={`text-4xl font-bold tracking-tight ${stats.bankBalance >= 0 ? 'text-white' : 'text-red-400'}`}>
+                            {formatCurrency(stats.bankBalance)}
+                        </p>
                     ) : (
-                        <>
-                             <p className={`text-4xl font-bold tracking-tight ${projectedBalance >= 0 ? 'text-white' : 'text-red-400'}`}>
-                                {formatCurrency(projectedBalance)}
-                            </p>
-                            <div className="flex items-center gap-2 mt-1">
-                                <p className="text-sm text-slate-500">Stand am {new Date(forecastDate).toLocaleDateString('de-DE')} (Simuliert)</p>
-                            </div>
-                        </>
+                         <p className={`text-4xl font-bold tracking-tight ${projectedBalance >= 0 ? 'text-white' : 'text-red-400'}`}>
+                            {formatCurrency(projectedBalance)}
+                        </p>
                     )}
                 </div>
 
@@ -292,10 +329,37 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                         </div>
                     </div>
                     <p className="text-4xl font-bold tracking-tight text-white">{formatCurrency(stats.cashBalance)}</p>
-                    <p className="text-sm text-slate-500 mt-1">Im Portemonnaie</p>
                 </div>
 
-                {/* Debt Free Forecast (New) */}
+                {/* Debt (New) */}
+                <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                            <div className="p-2 bg-red-500/20 rounded-lg">
+                                <HeartHandshake className="w-5 h-5 text-red-400" />
+                            </div>
+                            <h3 className="text-slate-300 font-medium">Schulden (Mama)</h3>
+                        </div>
+                        {mamaDebtRule && (
+                            <button 
+                                onClick={() => setShowDebtConfig(true)}
+                                className={`text-xs px-2 py-1 rounded border ${
+                                    mamaDebtRule.active 
+                                        ? 'border-green-500 text-green-400 bg-green-500/10' 
+                                        : 'border-slate-600 text-slate-500 bg-slate-900'
+                                }`}
+                            >
+                                {mamaDebtRule.active ? 'Wird getilgt' : 'Pausiert'}
+                            </button>
+                        )}
+                    </div>
+                    <p className="text-3xl font-bold tracking-tight text-red-400">-{formatCurrency(stats.remainingDebt)}</p>
+                    <p className="text-xs text-slate-500 mt-2">
+                        {mamaDebtRule?.active ? `Monatl. Rate: ${formatCurrency(mamaDebtRule.amount)}` : 'Aktuell keine feste Rückzahlung.'}
+                    </p>
+                </div>
+
+                {/* Debt Free Forecast */}
                 <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden">
                      <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2">
@@ -306,21 +370,11 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                         </div>
                     </div>
                     <div className="flex flex-col h-full justify-between pb-2">
-                        <div>
-                             {debtFreePrediction.status === 'positive' ? (
-                                <p className="text-2xl font-bold text-green-400">Geschafft!</p>
-                             ) : debtFreePrediction.status === 'impossible' ? (
-                                <p className="text-2xl font-bold text-red-400">Prüfen!</p>
-                             ) : (
-                                <p className="text-3xl font-bold text-purple-100">{debtFreePrediction.date}</p>
-                             )}
-                        </div>
-                        <p className="text-xs text-slate-500 mt-2">
+                        <p className="text-2xl font-bold text-purple-100">{debtFreePrediction.date}</p>
+                        <p className="text-xs text-slate-500 mt-1">
                              {debtFreePrediction.status === 'positive' 
-                                ? 'Du bist aktuell im Plus.' 
-                                : debtFreePrediction.status === 'impossible'
-                                    ? 'Ausgaben übersteigen Einnahmen.'
-                                    : 'Voraussichtlich im Plus ab diesem Monat.'}
+                                ? 'Konto im Plus.' 
+                                : 'Prognose Girokonto.'}
                         </p>
                     </div>
                 </div>
@@ -340,7 +394,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                             key={pot.id} 
                             onClick={() => {
                                 setSelectedPot(pot);
-                                setPotAccount('cash'); // Reset to default when opening
+                                setPotAccount('cash'); 
                             }}
                             className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col justify-between cursor-pointer hover:border-blue-500 transition-all group relative"
                         >
@@ -378,7 +432,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                 })}
             </div>
 
-            {/* 3. Line Chart (Balance History) */}
+            {/* 3. Line Chart */}
             <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
                 <div className="flex items-center justify-between mb-6">
                     <h3 className="text-lg font-semibold text-white">
@@ -406,7 +460,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                                 fontSize={12} 
                                 tickLine={false} 
                                 axisLine={false} 
-                                minTickGap={30} // Prevents cluttering by hiding adjacent labels
+                                minTickGap={30} 
                             />
                             <YAxis 
                                 stroke="#64748b" 
@@ -433,11 +487,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                         </AreaChart>
                     </ResponsiveContainer>
                 </div>
-                <div className="mt-4 text-xs text-slate-500 text-center">
-                    {mode === 'daily' 
-                        ? 'Zeigt tatsächliche Buchungen auf dem Girokonto.' 
-                        : 'Zeigt eine Simulation basierend auf wiederkehrenden Einnahmen und Fixkosten.'}
-                </div>
             </div>
 
             {/* MODAL: Spend from Pot */}
@@ -462,8 +511,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                                     placeholder="0.00"
                                 />
                             </div>
-                            
-                            {/* Account Selector */}
                             <div>
                                 <label className="block text-xs font-medium text-slate-400 mb-1">Zahlungsquelle</label>
                                 <div className="grid grid-cols-2 gap-2">
@@ -491,7 +538,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                                     </button>
                                 </div>
                             </div>
-
                             <div>
                                 <label className="block text-xs font-medium text-slate-400 mb-1">Datum der Ausgabe</label>
                                 <input 
@@ -508,6 +554,58 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL: Debt Config */}
+            {showDebtConfig && mamaDebtRule && (
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+                    <div className="bg-slate-800 rounded-2xl w-full max-w-sm border border-slate-700 shadow-2xl overflow-hidden">
+                        <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
+                            <h3 className="font-bold text-white">Rückzahlung Konfigurieren</h3>
+                            <button onClick={() => setShowDebtConfig(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5"/></button>
+                        </div>
+                        <div className="p-6 space-y-6">
+                            <p className="text-sm text-slate-400">
+                                Möchtest du die Rückzahlung der 1000€ an Mama in deine monatlichen Fixkosten (Girokonto) aufnehmen?
+                            </p>
+                            
+                            {mamaDebtRule.active && (
+                                <div>
+                                    <label className="block text-xs font-medium text-slate-400 mb-1">Monatliche Rate (€)</label>
+                                    <input 
+                                        type="number"
+                                        value={debtInstallment}
+                                        onChange={(e) => setDebtInstallment(e.target.value)}
+                                        className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white"
+                                    />
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <button 
+                                    onClick={() => toggleDebtRule(false)}
+                                    className={`py-3 rounded-lg border font-medium transition-all ${
+                                        !mamaDebtRule.active 
+                                            ? 'bg-slate-700 border-slate-500 text-white' 
+                                            : 'bg-transparent border-slate-700 text-slate-400 hover:text-white'
+                                    }`}
+                                >
+                                    Pausieren
+                                </button>
+                                <button 
+                                    onClick={() => toggleDebtRule(true)}
+                                    className={`py-3 rounded-lg border font-medium transition-all ${
+                                        mamaDebtRule.active 
+                                            ? 'bg-green-600 border-green-500 text-white' 
+                                            : 'bg-transparent border-green-800 text-green-500 hover:bg-green-900/20'
+                                    }`}
+                                >
+                                    Aktivieren
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}

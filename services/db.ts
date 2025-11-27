@@ -2,7 +2,7 @@
 import { Transaction, RecurringRule } from '../types';
 
 const DB_NAME = 'FinanceFlowDB';
-const DB_VERSION = 9; // Incremented to trigger re-seed with new specific pot data
+const DB_VERSION = 10; // Incremented for new Debt Rule
 const STORE_TRANSACTIONS = 'transactions';
 const STORE_RULES = 'recurring_rules';
 
@@ -26,8 +26,10 @@ export class DBService {
                     const txStore = db.createObjectStore(STORE_TRANSACTIONS, { keyPath: 'id' });
                     txStore.createIndex('date', 'date', { unique: false });
                 } else {
-                    const txStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_TRANSACTIONS);
-                    txStore?.clear();
+                    // Just clearing if structure changed in a way that requires it, but for V10 we preserve if possible
+                    // In this dev setup we tend to clear to re-seed clean data for logic updates
+                     const txStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_TRANSACTIONS);
+                     // txStore?.clear(); // Optional: Keep data if schema compatible
                 }
 
                 // Recurring Rules Store
@@ -36,7 +38,7 @@ export class DBService {
                     ruleStore.createIndex('active', 'active', { unique: false });
                 } else {
                      const ruleStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_RULES);
-                     ruleStore?.clear();
+                     ruleStore?.clear(); // Re-seed rules
                 }
             };
 
@@ -59,15 +61,6 @@ export class DBService {
         const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
         // 1. Initial Balances 
-        // BANK CALCULATION LOGIC:
-        // Target Current Balance: -1499.61
-        // Already Paid Items in DB (deducted by processRecurringRules or manually below):
-        // - Mama: 227.00
-        // - iPhone 13: 26.25
-        // - iPhone 16: 37.00
-        // Total Paid fixed costs: 290.25
-        // Start Balance = -1499.61 + 290.25 = -1209.36
-        
         await this.addTransaction({
             id: crypto.randomUUID(),
             date: `${currentMonthPrefix}-01`,
@@ -81,15 +74,6 @@ export class DBService {
             isRecurring: false,
             createdAt: Date.now()
         });
-
-        // CASH CALCULATION LOGIC:
-        // Target Remaining Cash: 200.00
-        // Pot Expenses to be added below:
-        // - Wochenende: 95.00
-        // - Wochentage: 120.00
-        // - Rauchen: 35.00
-        // Total Expenses = 250.00
-        // Start Cash needed = 200.00 + 250.00 = 450.00
 
         await this.addTransaction({
             id: crypto.randomUUID(),
@@ -105,8 +89,7 @@ export class DBService {
             createdAt: Date.now()
         });
 
-        // 2. Specific Pot Spending (User Request)
-        // Wochenende: Limit 120 -> Remaining 25 -> Spent 95
+        // 2. Specific Pot Spending
         await this.addTransaction({
             id: crypto.randomUUID(),
             date: `${currentMonthPrefix}-02`,
@@ -121,7 +104,6 @@ export class DBService {
             createdAt: Date.now()
         });
 
-        // Wochentage: Limit 120 -> Remaining 0 -> Spent 120
         await this.addTransaction({
             id: crypto.randomUUID(),
             date: `${currentMonthPrefix}-03`,
@@ -136,7 +118,6 @@ export class DBService {
             createdAt: Date.now()
         });
 
-        // Rauchen: Limit 40 -> Remaining 5 -> Spent 35
         await this.addTransaction({
             id: crypto.randomUUID(),
             date: `${currentMonthPrefix}-04`,
@@ -151,7 +132,7 @@ export class DBService {
             createdAt: Date.now()
         });
 
-        // 3. Define Recurring Rules (Fixed Costs Only)
+        // 3. Define Recurring Rules
         const initialRules: Omit<RecurringRule, 'id' | 'createdAt'>[] = [
             // Income
             { type: 'income', category: 'Bürgergeld', amount: 363.00, note: 'Ende des Monats', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 28, active: true },
@@ -171,6 +152,9 @@ export class DBService {
             
             // Special Annual/One-offs
             { type: 'expense', category: 'Geschenke', amount: 25.00, note: 'Weihnachten/Geburtstag', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: true },
+
+            // Debt Repayment (Inactive by default)
+            { type: 'expense', category: 'Rückzahlung Mama', amount: 50.00, note: 'Schuldenabbau', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: false },
         ];
 
         for (const rule of initialRules) {
@@ -204,7 +188,7 @@ export class DBService {
         for (const rule of rules) {
             if (!rule.active) continue;
 
-            // SPECIAL LOGIC: SKIP TEDi Gehalt for November 2025 (already received)
+            // SPECIAL LOGIC: SKIP TEDi Gehalt for November 2025
             if (rule.category === 'Gehalt TEDi' && currentMonthStr === '2025-11') {
                 continue;
             }
@@ -218,8 +202,6 @@ export class DBService {
                 const targetDay = Math.min(rule.dayOfMonth, new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate());
                 const dateStr = `${currentMonthStr}-${String(targetDay).padStart(2, '0')}`;
 
-                // Specific Logic for user request:
-                // Mama, iPhone 13, iPhone 16 are ALREADY PAID (Completed)
                 const isPrePaid = ['Abgabe Mama', 'iPhone 13 Pro', 'iPhone 16 Pro'].includes(rule.category);
 
                 const newTx: Transaction = {
@@ -258,6 +240,17 @@ export class DBService {
             const transaction = this.db.transaction([STORE_RULES], 'readwrite');
             const store = transaction.objectStore(STORE_RULES);
             const request = store.add(rule);
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async updateRule(rule: RecurringRule): Promise<void> {
+        return new Promise((resolve, reject) => {
+            if (!this.db) return reject("DB not initialized");
+            const transaction = this.db.transaction([STORE_RULES], 'readwrite');
+            const store = transaction.objectStore(STORE_RULES);
+            const request = store.put(rule);
             request.onsuccess = () => resolve();
             request.onerror = () => reject(request.error);
         });

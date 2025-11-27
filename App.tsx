@@ -6,17 +6,18 @@ import Dashboard from './components/Dashboard';
 import TransactionList from './components/TransactionList';
 import TransactionForm from './components/TransactionForm';
 import Settings from './components/Settings';
-import { LayoutDashboard, List, PlusCircle, Settings as SettingsIcon, Loader2 } from 'lucide-react';
+import { LayoutDashboard, List, PlusCircle, Settings as SettingsIcon, Loader2, Undo2 } from 'lucide-react';
 
 const App: React.FC = () => {
     const [view, setView] = useState<AppView>(AppView.DASHBOARD);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
     const [recurringRules, setRecurringRules] = useState<RecurringRule[]>([]);
     const [loading, setLoading] = useState(true);
-    // 'monthly' = Forecast, 'daily' = Current Status (Today)
     const [dashboardMode, setDashboardMode] = useState<'monthly' | 'daily'>('daily');
+    
+    // Undo Stack
+    const [undoStack, setUndoStack] = useState<{ label: string, action: () => Promise<void> }[]>([]);
 
-    // Initialize DB and fetch data
     useEffect(() => {
         const init = async () => {
             try {
@@ -40,47 +41,107 @@ const App: React.FC = () => {
         setRecurringRules(rulesData);
     };
 
-    const handleAddTransaction = async (txData: Omit<Transaction, 'id' | 'createdAt'>, ruleData?: Omit<RecurringRule, 'id' | 'createdAt' | 'active'>) => {
+    // --- Undo Logic Wrapper ---
+    const addUndoStep = (label: string, undoAction: () => Promise<void>) => {
+        setUndoStack(prev => [...prev, { label, action: undoAction }]);
+    };
+
+    const handleUndo = async () => {
+        if (undoStack.length === 0) return;
+        const lastStep = undoStack[undoStack.length - 1];
         
-        // 1. Create the Transaction
+        try {
+            await lastStep.action();
+            setUndoStack(prev => prev.slice(0, -1));
+            await refreshData();
+        } catch (error) {
+            console.error("Undo failed", error);
+            alert("Rückgängig machen fehlgeschlagen.");
+        }
+    };
+
+    // --- Action Handlers ---
+
+    const handleAddTransaction = async (txData: Omit<Transaction, 'id' | 'createdAt'>, ruleData?: Omit<RecurringRule, 'id' | 'createdAt' | 'active'>) => {
         const newTx: Transaction = {
             ...txData,
             id: crypto.randomUUID(),
             createdAt: Date.now()
         };
 
-        // 2. If it's a recurring rule, save the rule AND the transaction
+        let newRule: RecurringRule | undefined;
         if (txData.isRecurring && ruleData) {
             const ruleId = crypto.randomUUID();
-            const newRule: RecurringRule = {
+            newRule = {
                 ...ruleData,
                 id: ruleId,
                 active: true,
                 createdAt: Date.now()
             };
-            newTx.recurringId = ruleId; // Link the first transaction
+            newTx.recurringId = ruleId;
             await dbService.addRule(newRule);
         }
 
         await dbService.addTransaction(newTx);
         await refreshData();
+
+        // Undo Logic: Delete the created items
+        addUndoStep('Hinzufügen rückgängig', async () => {
+            await dbService.deleteTransaction(newTx.id);
+            if (newRule) {
+                // Technically we should delete the rule, but we don't expose deleteRule yet.
+                // For now, we just deactivate it or ignore strict rule deletion for simplicity in this specific user request scope
+                // Adding a toggle to inactive is safer
+                await dbService.updateRule({ ...newRule, active: false });
+            }
+        });
     };
 
     const handleUpdateTransaction = async (updatedTx: Transaction) => {
+        // Fetch old data for undo
+        const oldTx = transactions.find(t => t.id === updatedTx.id);
+        if (!oldTx) return;
+
         await dbService.updateTransaction(updatedTx);
         await refreshData();
+
+        // Undo Logic: Restore old data
+        addUndoStep('Änderung rückgängig', async () => {
+            await dbService.updateTransaction(oldTx);
+        });
     };
 
     const handleDeleteTransaction = async (id: string) => {
+        const txToDelete = transactions.find(t => t.id === id);
+        if (!txToDelete) return;
+
         if (confirm('Möchten Sie diese Transaktion wirklich löschen?')) {
             await dbService.deleteTransaction(id);
             await refreshData();
+
+            // Undo Logic: Re-add the deleted transaction
+            addUndoStep('Löschen rückgängig', async () => {
+                await dbService.addTransaction(txToDelete);
+            });
         }
+    };
+
+    const handleUpdateRule = async (updatedRule: RecurringRule) => {
+        const oldRule = recurringRules.find(r => r.id === updatedRule.id);
+        if (!oldRule) return;
+
+        await dbService.updateRule(updatedRule);
+        await refreshData();
+
+        addUndoStep('Regeländerung rückgängig', async () => {
+            await dbService.updateRule(oldRule);
+        });
     };
 
     const handleImport = async (data: Transaction[]) => {
         await dbService.importData(data);
         await refreshData();
+        // Import is too complex to undo easily in one step without backup, skipping undo for import
     };
 
     if (loading) {
@@ -93,7 +154,7 @@ const App: React.FC = () => {
     }
 
     return (
-        <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans">
+        <div className="flex h-screen bg-slate-950 text-slate-100 overflow-hidden font-sans relative">
             
             {/* Desktop Sidebar */}
             <aside className="hidden md:flex flex-col w-64 border-r border-slate-800 bg-slate-900/50 p-4">
@@ -132,10 +193,34 @@ const App: React.FC = () => {
                         label="Einstellungen" 
                     />
                 </nav>
+
+                {/* Undo Button Desktop (in Sidebar bottom) */}
+                {undoStack.length > 0 && (
+                     <button
+                        onClick={handleUndo}
+                        className="mt-4 flex items-center justify-center gap-2 w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-all border border-slate-700"
+                    >
+                        <Undo2 className="w-4 h-4" />
+                        <span>Schritt zurück</span>
+                    </button>
+                )}
             </aside>
 
             {/* Main Content Area */}
             <main className="flex-1 overflow-auto relative">
+                {/* Header Area for Mobile Undo or Status */}
+                <div className="md:hidden absolute top-4 right-4 z-50">
+                     {undoStack.length > 0 && (
+                         <button
+                            onClick={handleUndo}
+                            className="flex items-center gap-2 px-3 py-2 bg-slate-800/90 backdrop-blur text-white rounded-full shadow-lg border border-slate-700 text-xs font-medium"
+                        >
+                            <Undo2 className="w-4 h-4" />
+                            Zurück
+                        </button>
+                    )}
+                </div>
+
                 <div className="p-6 md:p-8 max-w-7xl mx-auto min-h-full">
                     {view === AppView.DASHBOARD && (
                         <Dashboard 
@@ -144,6 +229,7 @@ const App: React.FC = () => {
                             mode={dashboardMode} 
                             setMode={setDashboardMode}
                             onAddTransaction={handleAddTransaction}
+                            onUpdateRule={handleUpdateRule}
                         />
                     )}
                     {view === AppView.TRANSACTIONS && (
