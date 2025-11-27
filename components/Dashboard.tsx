@@ -15,7 +15,7 @@ interface DashboardProps {
 
 // Fixed Budget Configurations
 const BUDGET_POTS = [
-    // Standard limit for 420 is now 100, exception handled in logic
+    // Standard limit is 100, exception for Nov 2025 (150)
     { id: 'pot_420', name: '420 (Gras)', limit: 100, category: '420' },
     { id: 'pot_we', name: 'Wochenende', limit: 120, category: 'Wochenende' },
     { id: 'pot_week', name: 'Unter der Woche', limit: 120, category: 'Wochentage' },
@@ -67,11 +67,9 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
         });
 
         // Calculate Pot Usage (Current Month)
-        // 420 Logic: Check if we are viewing the current real-world month
-        const isCurrentRealMonth = (
-            new Date(forecastDate).getMonth() === now.getMonth() && 
-            new Date(forecastDate).getFullYear() === now.getFullYear()
-        );
+        // 420 Logic: Check if we are viewing Nov 2025 specifically
+        const forecastObj = new Date(forecastDate);
+        const isNov2025 = forecastObj.getFullYear() === 2025 && forecastObj.getMonth() === 10; // Month is 0-indexed (10 = Nov)
 
         const potStats = BUDGET_POTS.map(pot => {
             const spent = transactions
@@ -83,10 +81,12 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                 )
                 .reduce((sum, tx) => sum + tx.amount, 0);
             
-            // Exception Logic for 420: If it's the current month (now), limit is 150. Otherwise 100.
+            // Exception Logic for 420: 
+            // Standard: 100
+            // Exception (Nov 2025): 150
             let activeLimit = pot.limit;
-            if (pot.id === 'pot_420' && isCurrentRealMonth) {
-                activeLimit = 150;
+            if (pot.id === 'pot_420') {
+                activeLimit = isNov2025 ? 150 : 100;
             }
             
             return { ...pot, limit: activeLimit, spent, remaining: activeLimit - spent };

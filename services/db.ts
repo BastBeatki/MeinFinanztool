@@ -2,7 +2,7 @@
 import { Transaction, RecurringRule } from '../types';
 
 const DB_NAME = 'FinanceFlowDB';
-const DB_VERSION = 10; // Incremented for new Debt Rule
+const DB_VERSION = 12; // Bumped for Data Fixes
 const STORE_TRANSACTIONS = 'transactions';
 const STORE_RULES = 'recurring_rules';
 
@@ -25,20 +25,12 @@ export class DBService {
                 if (!db.objectStoreNames.contains(STORE_TRANSACTIONS)) {
                     const txStore = db.createObjectStore(STORE_TRANSACTIONS, { keyPath: 'id' });
                     txStore.createIndex('date', 'date', { unique: false });
-                } else {
-                    // Just clearing if structure changed in a way that requires it, but for V10 we preserve if possible
-                    // In this dev setup we tend to clear to re-seed clean data for logic updates
-                     const txStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_TRANSACTIONS);
-                     // txStore?.clear(); // Optional: Keep data if schema compatible
                 }
 
                 // Recurring Rules Store
                 if (!db.objectStoreNames.contains(STORE_RULES)) {
                     const ruleStore = db.createObjectStore(STORE_RULES, { keyPath: 'id' });
                     ruleStore.createIndex('active', 'active', { unique: false });
-                } else {
-                     const ruleStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_RULES);
-                     ruleStore?.clear(); // Re-seed rules
                 }
             };
 
@@ -46,8 +38,73 @@ export class DBService {
                 this.db = (event.target as IDBOpenDBRequest).result;
                 await this.seedInitialRules();
                 await this.processRecurringRules();
+                await this.runMigrations(); // Fix specific user requests
                 resolve();
             };
+        });
+    }
+
+    // Migration to fix specific data requests
+    private async runMigrations(): Promise<void> {
+        if (!this.db) return;
+        
+        const txs = await this.getAllTransactions();
+        const rules = await this.getAllRules();
+        const transaction = this.db.transaction([STORE_TRANSACTIONS, STORE_RULES], 'readwrite');
+        const txStore = transaction.objectStore(STORE_TRANSACTIONS);
+        const ruleStore = transaction.objectStore(STORE_RULES);
+
+        // 1. Fix Joyn & RTL PLUS for Nov 2025 (Set amount to 0, status completed)
+        // User requested: "Kontostand nicht berührt" -> Amount 0 implies it was already accounted for in Startsaldo
+        const billsToZero = txs.filter(t => 
+            (t.category === 'Joyn' || t.category === 'RTL PLUS') && 
+            t.date.startsWith('2025-11') &&
+            t.amount > 0 // Only if not already zeroed
+        );
+
+        billsToZero.forEach(tx => {
+            console.log(`Migrating ${tx.category}: Setting amount to 0 and completed.`);
+            tx.amount = 0;
+            tx.status = 'completed';
+            tx.note = (tx.note || '') + ' (Bereits im Startsaldo)';
+            txStore.put(tx);
+        });
+
+        // 2. Fix "Geschenke": Remove Rule, Ensure One-Time Transaction on 29.11.2025
+        const giftRule = rules.find(r => r.category === 'Geschenke');
+        if (giftRule) {
+            console.log("Deleting recurring rule for Geschenke");
+            ruleStore.delete(giftRule.id);
+        }
+
+        const giftTx = txs.find(t => t.category === 'Geschenke' && t.date.startsWith('2025-11'));
+        if (giftTx) {
+            // Update existing generated transaction
+            console.log("Updating Geschenke transaction to 29.11.2025");
+            giftTx.date = '2025-11-29';
+            giftTx.isRecurring = false;
+            delete giftTx.recurringId;
+            txStore.put(giftTx);
+        } else {
+            // Create if missing
+            const newGiftTx: Transaction = {
+                id: crypto.randomUUID(),
+                date: '2025-11-29',
+                amount: 25.00,
+                type: 'expense',
+                category: 'Geschenke',
+                note: 'Weihnachten/Geburtstag',
+                method: 'digital',
+                account: 'bank',
+                status: 'pending',
+                isRecurring: false,
+                createdAt: Date.now()
+            };
+            txStore.add(newGiftTx);
+        }
+
+        return new Promise((resolve) => {
+            transaction.oncomplete = () => resolve();
         });
     }
 
@@ -150,8 +207,7 @@ export class DBService {
             { type: 'expense', category: 'RTL PLUS', amount: 7.99, note: 'Ca. 20.-23.', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 21, active: true },
             { type: 'expense', category: 'Versicherung', amount: 40.00, note: 'Signal IDUNA (Januar)', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 15, active: false }, 
             
-            // Special Annual/One-offs
-            { type: 'expense', category: 'Geschenke', amount: 25.00, note: 'Weihnachten/Geburtstag', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: true },
+            // Note: Geschenke removed from here, handled in runMigrations/manual add
 
             // Debt Repayment (Inactive by default)
             { type: 'expense', category: 'Rückzahlung Mama', amount: 50.00, note: 'Schuldenabbau', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: false },
