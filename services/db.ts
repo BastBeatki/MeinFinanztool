@@ -2,7 +2,7 @@
 import { Transaction, RecurringRule } from '../types';
 
 const DB_NAME = 'FinanceFlowDB';
-const DB_VERSION = 12; // Bumped for Data Fixes
+const DB_VERSION = 14; // Bumped for Balance Fix Target -1399.61
 const STORE_TRANSACTIONS = 'transactions';
 const STORE_RULES = 'recurring_rules';
 
@@ -55,11 +55,10 @@ export class DBService {
         const ruleStore = transaction.objectStore(STORE_RULES);
 
         // 1. Fix Joyn & RTL PLUS for Nov 2025 (Set amount to 0, status completed)
-        // User requested: "Kontostand nicht berührt" -> Amount 0 implies it was already accounted for in Startsaldo
         const billsToZero = txs.filter(t => 
             (t.category === 'Joyn' || t.category === 'RTL PLUS') && 
             t.date.startsWith('2025-11') &&
-            t.amount > 0 // Only if not already zeroed
+            t.amount > 0 
         );
 
         billsToZero.forEach(tx => {
@@ -86,21 +85,71 @@ export class DBService {
             delete giftTx.recurringId;
             txStore.put(giftTx);
         } else {
-            // Create if missing
-            const newGiftTx: Transaction = {
-                id: crypto.randomUUID(),
-                date: '2025-11-29',
-                amount: 25.00,
-                type: 'expense',
-                category: 'Geschenke',
-                note: 'Weihnachten/Geburtstag',
-                method: 'digital',
-                account: 'bank',
-                status: 'pending',
-                isRecurring: false,
-                createdAt: Date.now()
-            };
-            txStore.add(newGiftTx);
+            // Only create if we haven't already processed it in a way that implies it exists
+            const existingOneTime = txs.find(t => t.category === 'Geschenke' && t.date === '2025-11-29');
+            if (!existingOneTime) {
+                 const newGiftTx: Transaction = {
+                    id: crypto.randomUUID(),
+                    date: '2025-11-29',
+                    amount: 25.00,
+                    type: 'expense',
+                    category: 'Geschenke',
+                    note: 'Weihnachten/Geburtstag',
+                    method: 'digital',
+                    account: 'bank',
+                    status: 'pending',
+                    isRecurring: false,
+                    createdAt: Date.now()
+                };
+                txStore.add(newGiftTx);
+                // Important: Push to memory array so subsequent balance checks in this migration see it
+                txs.push(newGiftTx);
+            }
+        }
+
+        // 3. Fix Startsaldo (Correction +100 EUR)
+        const startTx = txs.find(t => t.category === 'Startsaldo');
+        // Ensure we haven't already applied this specific fix to this transaction
+        if (startTx && !startTx.note.includes('KorrV13')) {
+            console.log("Migrating Startsaldo: Reducing expense by 100 to correct balance.");
+            if (startTx.type === 'expense') {
+                startTx.amount = Math.max(0, startTx.amount - 100);
+            } else {
+                startTx.amount += 100;
+            }
+            startTx.note = (startTx.note || '') + ' (KorrV13)';
+            txStore.put(startTx);
+        }
+
+        // 4. Force Balance to -1399.61 (User Request V14)
+        // We recalculate the balance based on the current state of 'txs' (which includes in-memory updates from steps 1-3)
+        // and adjust 'Startsaldo' to perfectly match the target.
+        const TARGET_BALANCE = -1399.61;
+        let currentBalance = 0;
+        
+        txs.forEach(t => {
+            if (t.status === 'completed' && t.account === 'bank') {
+                if (t.type === 'income') currentBalance += t.amount;
+                else currentBalance -= t.amount;
+            }
+        });
+
+        const diff = TARGET_BALANCE - currentBalance;
+
+        // Apply correction if difference is significant
+        if (Math.abs(diff) > 0.001 && startTx) {
+             console.log(`Migrating Balance V14: Correction from ${currentBalance} to ${TARGET_BALANCE} (Diff: ${diff})`);
+             
+             // Current contribution of Startsaldo
+             const currentStartVal = startTx.type === 'income' ? startTx.amount : -startTx.amount;
+             const newStartVal = currentStartVal + diff;
+             
+             startTx.amount = Math.abs(newStartVal);
+             startTx.type = newStartVal >= 0 ? 'income' : 'expense';
+             // We do not append a note here to keep it clean as requested, or just a small flag
+             // user requested "sonst NICHTS", so we change values only.
+             
+             txStore.put(startTx);
         }
 
         return new Promise((resolve) => {
@@ -121,7 +170,7 @@ export class DBService {
         await this.addTransaction({
             id: crypto.randomUUID(),
             date: `${currentMonthPrefix}-01`,
-            amount: 1209.36, 
+            amount: 1109.36, // Adjusted from 1209.36 for +100 correction
             type: 'expense', 
             category: 'Startsaldo',
             note: 'Übertrag aus Vormonat (Soll)',
