@@ -37,12 +37,15 @@ const CATEGORIES = [
     'Sonstiges'
 ];
 
+// FIX: Default date should match the simulation context (Nov 2025)
+const APP_NOW_STRING = '2025-11-17';
+
 const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel }) => {
     const [amount, setAmount] = useState('');
     const [type, setType] = useState<TransactionType>('expense');
     const [category, setCategory] = useState(CATEGORIES[0]);
-    // Date defaults to Today
-    const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+    // Date defaults to Simulation Today
+    const [date, setDate] = useState(APP_NOW_STRING);
     const [note, setNote] = useState('');
     
     const [account, setAccount] = useState<AccountType>('bank');
@@ -92,7 +95,8 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
 
     // Helper to set quick dates
     const setDateOffset = (offset: number) => {
-        const d = new Date();
+        // Use the current input date as base, not system real time
+        const d = new Date(date);
         d.setDate(d.getDate() + offset);
         setDate(d.toISOString().split('T')[0]);
     };

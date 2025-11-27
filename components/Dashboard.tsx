@@ -24,21 +24,24 @@ const BUDGET_POTS = [
 
 const DEBT_TOTAL_MAMA = 1000;
 
+// FIX: Use the exact same date as the DB seed to ensure "Today" in the dashboard matches the data context.
+const APP_NOW = new Date('2025-11-17T12:00:00');
+
 const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mode, setMode, onAddTransaction, onUpdateRule }) => {
     
     // Pot Modal State
     const [selectedPot, setSelectedPot] = useState<typeof BUDGET_POTS[0] | null>(null);
     const [potAmount, setPotAmount] = useState('');
-    const [potDate, setPotDate] = useState(new Date().toISOString().split('T')[0]);
+    const [potDate, setPotDate] = useState(APP_NOW.toISOString().split('T')[0]);
     const [potAccount, setPotAccount] = useState<AccountType>('cash'); // Default Cash, but changeable
     
     // Debt Config State
     const [showDebtConfig, setShowDebtConfig] = useState(false);
     const [debtInstallment, setDebtInstallment] = useState('50');
 
-    // Forecast Date State (Default: End of Current Month)
+    // Forecast Date State (Default: End of Current Month relative to APP_NOW)
     const [forecastDate, setForecastDate] = useState(() => {
-        const now = new Date();
+        const now = APP_NOW;
         return new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
     });
 
@@ -55,7 +58,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
 
     // 1. Calculate Stats
     const stats = useMemo(() => {
-        const now = new Date();
+        const now = APP_NOW;
         const currentMonth = now.getMonth();
         const currentYear = now.getFullYear();
 
@@ -63,7 +66,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
         let cashBalance = 0;
         let debtRepaid = 0;
         
-        // Calculate Actual Balances (Completed transactions up to today)
+        // Calculate Actual Balances (Completed transactions up to "APP_NOW")
         transactions.forEach(tx => {
             if (tx.status === 'completed') {
                 const amt = tx.type === 'income' ? tx.amount : -tx.amount;
@@ -124,9 +127,9 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
         let simBalance = stats.bankBalance;
         // If currently negative, track the last day it is negative.
         // If currently positive, we still need to check if it drops negative in future.
-        let lastNegativeDate: Date | null = simBalance < 0 ? new Date() : null;
+        let lastNegativeDate: Date | null = simBalance < 0 ? new Date(APP_NOW) : null;
 
-        const now = new Date();
+        const now = APP_NOW;
         const startSim = new Date(now);
         startSim.setDate(startSim.getDate() + 1); // Start simulation from tomorrow
         startSim.setHours(0,0,0,0);
@@ -225,18 +228,18 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
 
     // 3. Chart Data: Account Balance Trend (Real + Simulation)
     const chartData = useMemo(() => {
-        const now = new Date();
+        const now = APP_NOW;
         const endDate = new Date(forecastDate);
         const data = [];
 
         // --- PART 1: Historical Data (Real Transactions) ---
-        // Find rough start date for chart (Start of this month or earliest visible relevant date)
+        // Find rough start date for chart (Start of this month)
         const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
         
         // Sort transactions
         const sortedTx = [...transactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
         
-        // Calculate running balance up to "yesterday"
+        // Calculate running balance up to "startDate"
         let runningBalance = 0;
         
         sortedTx.forEach(tx => {
@@ -247,12 +250,13 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
         });
 
         // Loop Day by Day
+        // Important: Loop until endDate, which might be far in future
         for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
             const dateStr = d.toISOString().split('T')[0];
             const isFuture = d > now;
 
             if (!isFuture) {
-                // REALITY
+                // REALITY (Simulated "Reality" up to APP_NOW)
                 const dailyTxs = sortedTx.filter(tx => tx.date === dateStr && tx.account === 'bank' && tx.status === 'completed');
                 dailyTxs.forEach(tx => {
                     if (tx.type === 'income') runningBalance += tx.amount;
@@ -289,9 +293,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                 });
 
                 // C. Pot Simulation (Spending Habits)
-                
                 // 1. Pot 420: Split 50/50 on 1st and 15th
-                // Nov 2025 Exception: 150 total, otherwise 100
                 const isNov25 = currentYear === 2025 && currentMonth === 10;
                 const limit420 = isNov25 ? 150 : 100;
                 if (dayOfMonth === 1 || dayOfMonth === 15) {
@@ -355,7 +357,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
 
         setSelectedPot(null);
         setPotAmount('');
-        setPotDate(new Date().toISOString().split('T')[0]);
+        setPotDate(APP_NOW.toISOString().split('T')[0]);
     };
 
     const toggleDebtRule = async (active: boolean) => {

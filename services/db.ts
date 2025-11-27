@@ -2,9 +2,13 @@
 import { Transaction, RecurringRule } from '../types';
 
 const DB_NAME = 'FinanceFlowDB';
-const DB_VERSION = 15; // Bumped for Wankendorfer Refund
+const DB_VERSION = 16; // Bumped to force re-seed/migration on Vercel
 const STORE_TRANSACTIONS = 'transactions';
 const STORE_RULES = 'recurring_rules';
+
+// FIX: Establish a fixed "Simulation Date" to ensure Vercel matches the Preview/Screenshots exactly.
+// The user is planning from this perspective.
+const SIM_DATE = new Date('2025-11-17T12:00:00');
 
 export class DBService {
     private db: IDBDatabase | null = null;
@@ -55,6 +59,7 @@ export class DBService {
         const ruleStore = transaction.objectStore(STORE_RULES);
 
         // 1. Fix Joyn & RTL PLUS for Nov 2025 (Set amount to 0, status completed)
+        // Note: We check specifically for the simulation month '2025-11'
         const billsToZero = txs.filter(t => 
             (t.category === 'Joyn' || t.category === 'RTL PLUS') && 
             t.date.startsWith('2025-11') &&
@@ -107,19 +112,8 @@ export class DBService {
             }
         }
 
-        // 3. Fix Startsaldo (Correction +100 EUR)
-        const startTx = txs.find(t => t.category === 'Startsaldo');
-        // Ensure we haven't already applied this specific fix to this transaction
-        if (startTx && !startTx.note.includes('KorrV13')) {
-            console.log("Migrating Startsaldo: Reducing expense by 100 to correct balance.");
-            if (startTx.type === 'expense') {
-                startTx.amount = Math.max(0, startTx.amount - 100);
-            } else {
-                startTx.amount += 100;
-            }
-            startTx.note = (startTx.note || '') + ' (KorrV13)';
-            txStore.put(startTx);
-        }
+        // 3. Fix Startsaldo (Correction +100 EUR) logic removed/merged into Force Balance to avoid double math.
+        // We rely purely on the Target Balance calculation below.
 
         // 5. Add Wankendorfer Eutin Refund (Apr 2026)
         const refundTx = txs.find(t => t.category === 'Rückzahlung Genossenschaft' && t.date.startsWith('2026-04'));
@@ -142,35 +136,40 @@ export class DBService {
             txs.push(newTx);
         }
 
-        // 4. Force Balance to -1399.61 (User Request V14)
+        // 4. Force Balance to -1399.61 (Final Truth)
         // We recalculate the balance based on the current state of 'txs' (which includes in-memory updates from steps 1-3)
         // and adjust 'Startsaldo' to perfectly match the target.
+        const startTx = txs.find(t => t.category === 'Startsaldo');
         const TARGET_BALANCE = -1399.61;
-        let currentBalance = 0;
         
-        txs.forEach(t => {
-            if (t.status === 'completed' && t.account === 'bank') {
-                if (t.type === 'income') currentBalance += t.amount;
-                else currentBalance -= t.amount;
+        if (startTx) {
+            let currentBalance = 0;
+            
+            // Re-calculate sum of all COMPLETED BANK transactions (excluding the Startsaldo itself for a moment)
+            txs.forEach(t => {
+                if (t.status === 'completed' && t.account === 'bank' && t.id !== startTx.id) {
+                    if (t.type === 'income') currentBalance += t.amount;
+                    else currentBalance -= t.amount;
+                }
+            });
+
+            // TARGET = CURRENT_OTHERS + STARTSALDO_NET
+            // STARTSALDO_NET = TARGET - CURRENT_OTHERS
+            const neededStartNet = TARGET_BALANCE - currentBalance;
+            
+            // If neededStartNet is negative, it's an expense. If positive, income.
+            const newType = neededStartNet >= 0 ? 'income' : 'expense';
+            const newAmount = Math.abs(neededStartNet);
+
+            // Only update if different
+            if (Math.abs(startTx.amount - newAmount) > 0.001 || startTx.type !== newType) {
+                 console.log(`Migrating Balance: Force adjusting Startsaldo to ${newAmount} (${newType}) to hit ${TARGET_BALANCE}`);
+                 startTx.amount = newAmount;
+                 startTx.type = newType;
+                 // Ensure Startsaldo is always completed
+                 startTx.status = 'completed';
+                 txStore.put(startTx);
             }
-        });
-
-        const diff = TARGET_BALANCE - currentBalance;
-
-        // Apply correction if difference is significant
-        if (Math.abs(diff) > 0.001 && startTx) {
-             console.log(`Migrating Balance V14: Correction from ${currentBalance} to ${TARGET_BALANCE} (Diff: ${diff})`);
-             
-             // Current contribution of Startsaldo
-             const currentStartVal = startTx.type === 'income' ? startTx.amount : -startTx.amount;
-             const newStartVal = currentStartVal + diff;
-             
-             startTx.amount = Math.abs(newStartVal);
-             startTx.type = newStartVal >= 0 ? 'income' : 'expense';
-             // We do not append a note here to keep it clean as requested, or just a small flag
-             // user requested "sonst NICHTS", so we change values only.
-             
-             txStore.put(startTx);
         }
 
         return new Promise((resolve) => {
@@ -184,14 +183,15 @@ export class DBService {
         const rulesCount = await this.countRules();
         if (rulesCount > 0) return; // Already seeded
 
-        const now = new Date();
+        // USE FIXED SIM DATE to ensure Vercel matches Preview
+        const now = SIM_DATE; 
         const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
         // 1. Initial Balances 
         await this.addTransaction({
             id: crypto.randomUUID(),
             date: `${currentMonthPrefix}-01`,
-            amount: 1109.36, // Adjusted from 1209.36 for +100 correction
+            amount: 1109.36, 
             type: 'expense', 
             category: 'Startsaldo',
             note: 'Übertrag aus Vormonat (Soll)',
@@ -277,8 +277,6 @@ export class DBService {
             { type: 'expense', category: 'RTL PLUS', amount: 7.99, note: 'Ca. 20.-23.', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 21, active: true },
             { type: 'expense', category: 'Versicherung', amount: 40.00, note: 'Signal IDUNA (Januar)', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 15, active: false }, 
             
-            // Note: Geschenke removed from here, handled in runMigrations/manual add
-
             // Debt Repayment (Inactive by default)
             { type: 'expense', category: 'Rückzahlung Mama', amount: 50.00, note: 'Schuldenabbau', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: false },
         ];
@@ -307,7 +305,9 @@ export class DBService {
         if (!this.db) return;
         
         const rules = await this.getAllRules();
-        const now = new Date();
+        
+        // USE FIXED SIM DATE
+        const now = SIM_DATE;
         const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         const allTx = await this.getAllTransactions();
         
