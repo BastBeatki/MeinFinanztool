@@ -2,7 +2,7 @@
 import { Transaction, RecurringRule } from '../types';
 
 const DB_NAME = 'FinanceFlowDB';
-const DB_VERSION = 3; // Incremented to trigger re-seed
+const DB_VERSION = 7; // Incremented to trigger re-seed
 const STORE_TRANSACTIONS = 'transactions';
 const STORE_RULES = 'recurring_rules';
 
@@ -26,7 +26,6 @@ export class DBService {
                     const txStore = db.createObjectStore(STORE_TRANSACTIONS, { keyPath: 'id' });
                     txStore.createIndex('date', 'date', { unique: false });
                 } else {
-                    // Clear old data on version upgrade to fix the negative balance logic
                     const txStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_TRANSACTIONS);
                     txStore?.clear();
                 }
@@ -59,14 +58,20 @@ export class DBService {
         const now = new Date();
         const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-        // 1. Initial Balances (Completed)
-        // Bank Balance (Negative Start)
+        // 1. Initial Balances 
+        // CALCULATION LOGIC:
+        // Target Current Balance: -1499.61
+        // Already Paid Items in DB:
+        // - Mama: 227.00
+        // - iPhone 13: 26.25
+        // - iPhone 16: 37.00
+        // Total Paid: 290.25
+        // Start Balance must be: -1499.61 + 290.25 = -1209.36
+        
         await this.addTransaction({
             id: crypto.randomUUID(),
             date: `${currentMonthPrefix}-01`,
-            amount: 1499.61, // Negative Logic handled by Type or Math. Here we use 'expense' to represent initial debt or just negative start? 
-            // Better: Use a specific 'Balance Correction' income/expense. 
-            // If it's -1499, it's like an initial expense of 1499.
+            amount: 1209.36, // Calculated so result is -1499.61 after paid items
             type: 'expense', 
             category: 'Startsaldo',
             note: 'Übertrag aus Vormonat (Soll)',
@@ -92,16 +97,31 @@ export class DBService {
             createdAt: Date.now()
         });
 
-        // 2. Define Recurring Rules (Based on CSV)
-        // Note: Amounts are from the "Plan" (CSV 2) to start the month with full budgets.
+        // Partial Spend for Weekend Pot (To leave ~25€ of 120€)
+        // Spent: 95.00
+        await this.addTransaction({
+            id: crypto.randomUUID(),
+            date: `${currentMonthPrefix}-02`, // Early in month
+            amount: 95.00,
+            type: 'expense',
+            category: 'Wochenende',
+            note: 'Bisherige Wochenenden',
+            method: 'cash', // Assuming pots are often cash/mixed
+            account: 'cash',
+            status: 'completed',
+            isRecurring: false,
+            createdAt: Date.now()
+        });
+
+        // 2. Define Recurring Rules (Fixed Costs Only)
         const initialRules: Omit<RecurringRule, 'id' | 'createdAt'>[] = [
             // Income
             { type: 'income', category: 'Bürgergeld', amount: 363.00, note: 'Ende des Monats', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 28, active: true },
             { type: 'income', category: 'Gehalt Reporter', amount: 170.89, note: 'Variabel', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 28, active: true },
             { type: 'income', category: 'Gehalt TEDi', amount: 350.00, note: 'Mitte des Monats', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 15, active: true },
             
-            // Fixed Expenses (Bank)
-            { type: 'expense', category: 'Miete/Essen', amount: 227.00, note: 'Abgabe an MAMA', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: true },
+            // Fixed Expenses (Bank) - ALREADY PAID ITEMS MARKED IN processRecurringRules logic via override or manual check below
+            { type: 'expense', category: 'Abgabe Mama', amount: 227.00, note: 'Miete/Essen', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: true },
             { type: 'expense', category: 'O2 Vertrag', amount: 59.00, note: 'Ende des Monats', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 28, active: true },
             { type: 'expense', category: 'iPhone 13 Pro', amount: 26.25, note: 'Rate bis 28.8.2026', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: true },
             { type: 'expense', category: 'iPhone 16 Pro', amount: 37.00, note: 'Rate bis 28.7.2028', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: true },
@@ -110,12 +130,8 @@ export class DBService {
             { type: 'expense', category: 'Joyn', amount: 6.99, note: 'Mitte des Monats', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 15, active: true },
             { type: 'expense', category: 'RTL PLUS', amount: 7.99, note: 'Ca. 20.-23.', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 21, active: true },
             { type: 'expense', category: 'Versicherung', amount: 40.00, note: 'Signal IDUNA (Januar)', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 15, active: false }, 
-
-            // Variable/Budget Expenses (Deducted from Bank as per CSV note "wird vom Konto abgezogen")
-            { type: 'expense', category: 'Budget (420)', amount: 150.00, note: 'Für den gesamten Monat', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: true },
-            { type: 'expense', category: 'Wochenende', amount: 120.00, note: 'Geld zum Leben', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: true },
-            { type: 'expense', category: 'Wochentage', amount: 120.00, note: 'Geld zum Leben (Mo-Fr)', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: true },
-            { type: 'expense', category: 'Rauchen', amount: 40.00, note: 'Monatsbudget', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: true },
+            
+            // Special Annual/One-offs
             { type: 'expense', category: 'Geschenke', amount: 25.00, note: 'Weihnachten/Geburtstag', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: true },
         ];
 
@@ -159,6 +175,10 @@ export class DBService {
                 const targetDay = Math.min(rule.dayOfMonth, new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate());
                 const dateStr = `${currentMonthStr}-${String(targetDay).padStart(2, '0')}`;
 
+                // Specific Logic for user request:
+                // Mama, iPhone 13, iPhone 16 are ALREADY PAID (Completed)
+                const isPrePaid = ['Abgabe Mama', 'iPhone 13 Pro', 'iPhone 16 Pro'].includes(rule.category);
+
                 const newTx: Transaction = {
                     id: crypto.randomUUID(),
                     date: dateStr,
@@ -168,8 +188,7 @@ export class DBService {
                     note: rule.note,
                     method: rule.method,
                     account: rule.account,
-                    // "X" logic: Default to Pending. User removes X (sets to completed) when done.
-                    status: 'pending', 
+                    status: isPrePaid ? 'completed' : 'pending', 
                     isRecurring: true,
                     recurringId: rule.id,
                     createdAt: Date.now()

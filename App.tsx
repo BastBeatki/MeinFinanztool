@@ -11,8 +11,9 @@ import { LayoutDashboard, List, PlusCircle, Settings as SettingsIcon, Loader2 } 
 const App: React.FC = () => {
     const [view, setView] = useState<AppView>(AppView.DASHBOARD);
     const [transactions, setTransactions] = useState<Transaction[]>([]);
+    const [recurringRules, setRecurringRules] = useState<RecurringRule[]>([]);
     const [loading, setLoading] = useState(true);
-    // 'monthly' = Forecast End of Month, 'daily' = Current Status (Today)
+    // 'monthly' = Forecast, 'daily' = Current Status (Today)
     const [dashboardMode, setDashboardMode] = useState<'monthly' | 'daily'>('daily');
 
     // Initialize DB and fetch data
@@ -31,8 +32,12 @@ const App: React.FC = () => {
     }, []);
 
     const refreshData = async () => {
-        const data = await dbService.getAllTransactions();
-        setTransactions(data);
+        const [txData, rulesData] = await Promise.all([
+            dbService.getAllTransactions(),
+            dbService.getAllRules()
+        ]);
+        setTransactions(txData);
+        setRecurringRules(rulesData);
     };
 
     const handleAddTransaction = async (txData: Omit<Transaction, 'id' | 'createdAt'>, ruleData?: Omit<RecurringRule, 'id' | 'createdAt' | 'active'>) => {
@@ -59,7 +64,6 @@ const App: React.FC = () => {
 
         await dbService.addTransaction(newTx);
         await refreshData();
-        setView(AppView.DASHBOARD);
     };
 
     const handleUpdateTransaction = async (updatedTx: Transaction) => {
@@ -136,8 +140,10 @@ const App: React.FC = () => {
                     {view === AppView.DASHBOARD && (
                         <Dashboard 
                             transactions={transactions} 
+                            recurringRules={recurringRules}
                             mode={dashboardMode} 
-                            setMode={setDashboardMode} 
+                            setMode={setDashboardMode}
+                            onAddTransaction={handleAddTransaction}
                         />
                     )}
                     {view === AppView.TRANSACTIONS && (
@@ -149,7 +155,10 @@ const App: React.FC = () => {
                     )}
                     {view === AppView.ADD && (
                         <TransactionForm 
-                            onSubmit={handleAddTransaction} 
+                            onSubmit={async (tx, rule) => {
+                                await handleAddTransaction(tx, rule);
+                                setView(AppView.DASHBOARD);
+                            }} 
                             onCancel={() => setView(AppView.DASHBOARD)} 
                         />
                     )}

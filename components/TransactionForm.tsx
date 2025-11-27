@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { TransactionType, Transaction, AccountType, RecurringRule } from '../types';
-import { PlusCircle, Loader2, Repeat, Landmark, Coins } from 'lucide-react';
+import { PlusCircle, Loader2, Repeat, Landmark, Coins, CalendarDays } from 'lucide-react';
 
 interface TransactionFormProps {
     onSubmit: (
@@ -11,20 +11,40 @@ interface TransactionFormProps {
     onCancel: () => void;
 }
 
+// Updated Categories based on Money Pots + Fixed Costs
 const CATEGORIES = [
-    'Miete', 'Essen', 'Lebensmittel', 'Transport', 'Nebenkosten', 'Unterhaltung', 'Einkaufen', 
-    'Gesundheit', 'Bildung', 'Gehalt', 'Freiberuflich', 'Investition', 'Versicherung', 'Abo', 'Sonstiges',
-    'Bürgergeld', 'Reporter', 'TEDi', 'Budget'
+    // Money Pots
+    '420', 
+    'Wochenende', 
+    'Wochentage', 
+    'Rauchen', 
+    
+    // Fixed / Recurring
+    'Miete', 
+    'Essen', 
+    'Lebensmittel', 
+    'Abgabe Mama',
+    'O2 Vertrag',
+    'Spotify',
+    'Joyn',
+    'RTL PLUS',
+    'iPhone Rate',
+    
+    // Income
+    'Bürgergeld', 
+    'Gehalt Reporter', 
+    'Gehalt TEDi', 
+    'Sonstiges'
 ];
 
 const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel }) => {
     const [amount, setAmount] = useState('');
     const [type, setType] = useState<TransactionType>('expense');
     const [category, setCategory] = useState(CATEGORIES[0]);
+    // Date defaults to Today
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [note, setNote] = useState('');
     
-    // New Fields
     const [account, setAccount] = useState<AccountType>('bank');
     const [isRecurring, setIsRecurring] = useState(false);
     
@@ -44,7 +64,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
                 note,
                 method: account === 'cash' ? 'cash' : 'digital',
                 account,
-                // Manually added items are usually 'completed' immediately unless user wants to plan
+                // New entries are usually completed immediately unless explicitly recurring plan
                 status: 'completed', 
                 isRecurring,
             };
@@ -68,6 +88,13 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
         } finally {
             setIsSubmitting(false);
         }
+    };
+
+    // Helper to set quick dates
+    const setDateOffset = (offset: number) => {
+        const d = new Date();
+        d.setDate(d.getDate() + offset);
+        setDate(d.toISOString().split('T')[0]);
     };
 
     return (
@@ -167,7 +194,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Category */}
                     <div>
-                        <label className="block text-sm font-medium text-slate-400 mb-2">Kategorie</label>
+                        <label className="block text-sm font-medium text-slate-400 mb-2">Kategorie / Topf</label>
                         <select
                             value={category}
                             onChange={(e) => setCategory(e.target.value)}
@@ -182,13 +209,23 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
                     {/* Date */}
                     <div>
                         <label className="block text-sm font-medium text-slate-400 mb-2">Datum</label>
-                        <input
-                            type="date"
-                            required
-                            value={date}
-                            onChange={(e) => setDate(e.target.value)}
-                            className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                        />
+                        <div className="space-y-2">
+                            <div className="relative">
+                                <CalendarDays className="absolute left-3 top-3.5 w-4 h-4 text-slate-500" />
+                                <input
+                                    type="date"
+                                    required
+                                    value={date}
+                                    onChange={(e) => setDate(e.target.value)}
+                                    className="w-full bg-slate-900 border border-slate-700 rounded-lg pl-10 pr-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                                />
+                            </div>
+                            <div className="flex gap-2">
+                                <button type="button" onClick={() => setDateOffset(-1)} className="flex-1 text-xs bg-slate-900 border border-slate-700 rounded py-1 hover:bg-slate-800 text-slate-400">Gestern</button>
+                                <button type="button" onClick={() => setDateOffset(0)} className="flex-1 text-xs bg-slate-900 border border-slate-700 rounded py-1 hover:bg-slate-800 text-slate-400">Heute</button>
+                                <button type="button" onClick={() => setDateOffset(1)} className="flex-1 text-xs bg-slate-900 border border-slate-700 rounded py-1 hover:bg-slate-800 text-slate-400">Morgen</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

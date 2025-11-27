@@ -12,6 +12,7 @@ interface TransactionListProps {
 const TransactionList: React.FC<TransactionListProps> = ({ transactions, onDelete, onUpdate }) => {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editAmount, setEditAmount] = useState('');
+    const [editDate, setEditDate] = useState('');
 
     const formatCurrency = (val: number) => {
         return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val);
@@ -29,12 +30,13 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, onDelet
     const startEdit = (tx: Transaction) => {
         setEditingId(tx.id);
         setEditAmount(tx.amount.toString());
+        setEditDate(tx.date);
     };
 
     const saveEdit = (tx: Transaction) => {
         const num = parseFloat(editAmount);
-        if (!isNaN(num)) {
-            onUpdate({ ...tx, amount: num });
+        if (!isNaN(num) && editDate) {
+            onUpdate({ ...tx, amount: num, date: editDate });
         }
         setEditingId(null);
     };
@@ -60,7 +62,7 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, onDelet
                         return (
                             <div 
                                 key={tx.id} 
-                                className={`p-4 rounded-xl border flex items-center justify-between group transition-all ${
+                                className={`p-4 rounded-xl border flex flex-col md:flex-row md:items-center justify-between gap-4 group transition-all ${
                                     isPending 
                                         ? 'bg-slate-900/50 border-slate-800 opacity-80 hover:opacity-100' 
                                         : 'bg-slate-800 border-slate-700 hover:border-slate-600'
@@ -104,13 +106,22 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, onDelet
                                             )}
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            <span className="text-xs text-slate-400">{formatDate(tx.date)}</span>
+                                            {isEditing ? (
+                                                <input 
+                                                    type="date"
+                                                    value={editDate}
+                                                    onChange={(e) => setEditDate(e.target.value)}
+                                                    className="bg-slate-950 border border-slate-600 rounded px-2 py-0.5 text-xs text-slate-300"
+                                                />
+                                            ) : (
+                                                <span className="text-xs text-slate-400">{formatDate(tx.date)}</span>
+                                            )}
                                             {tx.note && <span className="text-xs text-slate-500 hidden md:inline">• {tx.note}</span>}
                                         </div>
                                     </div>
                                 </div>
                                 
-                                <div className="flex items-center gap-3">
+                                <div className="flex items-center justify-between md:justify-end gap-3 w-full md:w-auto">
                                     {isEditing ? (
                                         <div className="flex items-center gap-2">
                                             <input 
@@ -135,17 +146,17 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, onDelet
                                     )}
 
                                     {/* Action Menu */}
-                                    <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <div className={`flex gap-1 ${isEditing ? 'hidden' : ''}`}>
                                         <button 
                                             onClick={() => startEdit(tx)}
-                                            className="text-slate-500 hover:text-blue-400 p-1 rounded hover:bg-slate-700"
-                                            title="Betrag anpassen"
+                                            className="text-slate-500 hover:text-blue-400 p-2 rounded hover:bg-slate-700 transition-colors"
+                                            title="Betrag/Datum anpassen"
                                         >
                                             <Edit2 className="w-3 h-3" />
                                         </button>
                                         <button 
                                             onClick={() => onDelete(tx.id)}
-                                            className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-slate-700"
+                                            className="text-slate-500 hover:text-red-400 p-2 rounded hover:bg-slate-700 transition-colors"
                                             title="Löschen"
                                         >
                                             <Trash2 className="w-3 h-3" />
