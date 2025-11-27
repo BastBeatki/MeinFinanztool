@@ -2,7 +2,8 @@
 export type TransactionType = 'income' | 'expense';
 export type PaymentMethod = 'cash' | 'digital';
 export type TransactionStatus = 'pending' | 'completed';
-export type RecurrenceFrequency = 'monthly'; // Extendable later
+export type AccountType = 'bank' | 'cash';
+export type RecurrenceFrequency = 'monthly';
 
 export interface Transaction {
     id: string;
@@ -12,9 +13,10 @@ export interface Transaction {
     category: string;
     note: string;
     method: PaymentMethod;
+    account: AccountType; // New field
     status: TransactionStatus;
     isRecurring: boolean;
-    recurringId?: string; // Links specific instance to the rule
+    recurringId?: string;
     createdAt: number;
 }
 
@@ -25,8 +27,9 @@ export interface RecurringRule {
     amount: number;
     note: string;
     method: PaymentMethod;
+    account: AccountType; // New field
     frequency: RecurrenceFrequency;
-    dayOfMonth: number; // 1-31
+    dayOfMonth: number;
     active: boolean;
     createdAt: number;
 }
@@ -39,8 +42,9 @@ export enum AppView {
 }
 
 export interface DashboardStats {
-    totalBalance: number;
+    bankBalance: number;
+    cashBalance: number;
+    projectedBalance: number;
     income: number;
     expense: number;
-    projectedBalance?: number; // For monthly view
 }

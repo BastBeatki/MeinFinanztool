@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react';
 import { Transaction, DashboardStats } from '../types';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { TrendingUp, TrendingDown, Wallet, Calendar, Clock } from 'lucide-react';
+import { TrendingUp, TrendingDown, Wallet, Calendar, Clock, Landmark, Coins } from 'lucide-react';
 
 interface DashboardProps {
     transactions: Transaction[];
@@ -18,151 +18,78 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, mode, setMode }) =>
         const currentYear = now.getFullYear();
         const todayStr = now.toISOString().split('T')[0];
 
-        let totalBalance = 0;
+        let bankBalance = 0;
+        let cashBalance = 0;
+        let projectedBalance = 0;
         let income = 0;
         let expense = 0;
 
-        // Base calculation for 'All time' total balance before this month? 
-        // For simplicity in this personal finance app, we sum everything relevant.
-        
-        // Filter logic
-        const relevantTransactions = transactions.filter(tx => {
+        transactions.forEach(tx => {
             const txDate = new Date(tx.date);
-            
-            // For both modes, we generally want to calculate the global balance,
-            // but the "Projected" vs "Actual" difference matters for the current month.
-            
-            // Logic:
-            // 1. Past months: Always count everything (assuming they happened).
-            // 2. Future months: Ignore for "Current Status", include for "Forecast" maybe? 
-            //    Let's stick to "Current Month View" vs "Today View".
-            
-            if (txDate.getMonth() !== currentMonth || txDate.getFullYear() !== currentYear) {
-                // Transactions outside current month:
-                // If they are in the past, they contribute to the base balance.
-                // If future, ignore.
-                return txDate < now;
-            }
-            
-            // We are in the Current Month:
-            if (mode === 'daily') {
-                // DAILY VIEW (Tagesansicht): 
-                // Only count transactions UP TO today AND (if recurring) they must be completed.
-                // If it's a future dated transaction in this month, ignore it.
-                // If it's a pending recurring transaction (even if date is past/today), ignore it until checked?
-                // User requirement: "erst wenn Haken gesetzt... wird abgebucht".
-                
-                if (tx.date > todayStr) return false; // Future days in this month
-                if (tx.status === 'pending') return false; // Not checked off yet
-                return true;
-            } else {
-                // MONTHLY VIEW (Monatsansicht / Forecast):
-                // Count EVERYTHING in this month, pending or not, checked or not.
-                // This shows "End of Month" state.
-                return true;
-            }
-        });
+            const isFuture = txDate > now && (txDate.getMonth() !== currentMonth || txDate.getFullYear() !== currentYear);
+            if (isFuture) return; // Skip future months
 
-        // Calculate generic Total Balance (History + Current View Selection)
-        // Note: For a proper finance app, we'd need a "Starting Balance". 
-        // Here we assume 0 start + history.
-        
-        // To get the "Forecast", we take the 'daily' balance and add the remaining items?
-        // No, simpler: Just sum up the filtered list.
-        
-        relevantTransactions.forEach(tx => {
-             if (tx.type === 'income') {
-                income += tx.amount;
-                totalBalance += tx.amount;
-            } else {
-                expense += tx.amount;
-                totalBalance -= tx.amount;
+            // 1. Calculate Actual Current Status (Daily)
+            // Bank & Cash Balances are sum of COMPLETED transactions + Initial Seeds
+            if (tx.status === 'completed') {
+                if (tx.account === 'bank') {
+                    if (tx.type === 'income') bankBalance += tx.amount;
+                    else bankBalance -= tx.amount;
+                } else {
+                    if (tx.type === 'income') cashBalance += tx.amount;
+                    else cashBalance -= tx.amount;
+                }
             }
-        });
 
-        // If we need to capture "History" (previous months) accurately for Total Balance:
-        // The above loop filters strictly. Let's fix:
-        // We need: Global Balance = (All Past Months) + (Current Month Filtered).
-        // Let's re-run a full reduce.
-        
-        return transactions.reduce((acc, curr) => {
-            const txDate = new Date(curr.date);
-            const isPastMonth = txDate.getMonth() < currentMonth || txDate.getFullYear() < currentYear;
+            // 2. Calculate Projected (End of Month)
+            // Includes Pending items for current month
             const isCurrentMonth = txDate.getMonth() === currentMonth && txDate.getFullYear() === currentYear;
-            const isFuture = txDate > now && !isCurrentMonth; // Real future
-
-            if (isFuture) return acc; // Ignore next months completely for now
-
-            let shouldCount = false;
-
-            if (isPastMonth) {
-                shouldCount = true; // Always count past
+            const isPast = txDate < now && !isCurrentMonth;
+            
+            // For projected, we take the base (Completed Past) + (All Current Month, including pending)
+            if (isPast && tx.status === 'completed') {
+                if (tx.account === 'bank') {
+                    if (tx.type === 'income') projectedBalance += tx.amount;
+                    else projectedBalance -= tx.amount;
+                }
             } else if (isCurrentMonth) {
-                if (mode === 'monthly') {
-                    shouldCount = true; // Count all for forecast
-                } else {
-                    // Daily mode
-                    const isFutureDay = curr.date > todayStr;
-                    const isPending = curr.status === 'pending';
-                    if (!isFutureDay && !isPending) {
-                        shouldCount = true;
-                    }
+                // Include EVERYTHING in current month for projection, regardless of status
+                // But only for BANK account usually, unless we want total wealth?
+                // Let's stick to Bank Projection as that's the main concern (Overdraft)
+                if (tx.account === 'bank') {
+                    if (tx.type === 'income') projectedBalance += tx.amount;
+                    else projectedBalance -= tx.amount;
                 }
             }
 
-            if (shouldCount) {
-                 if (curr.type === 'income') {
-                    acc.income += curr.amount; // Note: This accumulates 'income' stat for ALL time, might want just month?
-                    // Usually Dashboard "Income/Expense" cards show CURRENT MONTH stats.
-                    // Let's separate "Total Balance" from "Monthly Stats".
-                    acc.totalBalance += curr.amount;
-                } else {
-                    acc.expense += curr.amount;
-                    acc.totalBalance -= curr.amount;
+            // 3. Monthly Stats (Income/Expense Flow)
+            if (isCurrentMonth) {
+                // View logic: Daily = only completed, Monthly = everything
+                let shouldCount = false;
+                if (mode === 'monthly') shouldCount = true;
+                else if (tx.status === 'completed') shouldCount = true;
+
+                if (shouldCount) {
+                     if (tx.type === 'income') income += tx.amount;
+                     else expense += tx.amount;
                 }
             }
-            return acc;
+        });
 
-        }, { totalBalance: 0, income: 0, expense: 0 });
-
-    }, [transactions, mode]);
-
-    // Recalculate just Income/Expense for the specific displayed month for the Cards
-    const monthlyStats = useMemo(() => {
-        const now = new Date();
-        const currentMonth = now.getMonth();
-        const currentYear = now.getFullYear();
-        
-        return transactions.reduce((acc, curr) => {
-            const txDate = new Date(curr.date);
-            if (txDate.getMonth() === currentMonth && txDate.getFullYear() === currentYear) {
-                 // For the cards, we follow the same View Logic (Forecast vs Actual)
-                 let include = false;
-                 if (mode === 'monthly') include = true;
-                 else {
-                     // Daily
-                     if (curr.date <= now.toISOString().split('T')[0] && curr.status === 'completed') include = true;
-                 }
-
-                 if (include) {
-                     if (curr.type === 'income') acc.income += curr.amount;
-                     else acc.expense += curr.amount;
-                 }
-            }
-            return acc;
-        }, { income: 0, expense: 0 });
+        return { bankBalance, cashBalance, projectedBalance, income, expense };
     }, [transactions, mode]);
 
     const chartData = useMemo(() => {
         const grouped = transactions.reduce((acc, curr) => {
-            // Last 7 days? Or Current Month days?
-            // Let's show last 7 active days for simplicity
             const date = new Date(curr.date).toLocaleDateString('de-DE', { month: 'short', day: 'numeric' });
             if (!acc[date]) {
                 acc[date] = { date, income: 0, expense: 0 };
             }
-            if (curr.type === 'income') acc[date].income += curr.amount;
-            else acc[date].expense += curr.amount;
+            // Only show completed for trend
+            if (curr.status === 'completed') {
+                if (curr.type === 'income') acc[date].income += curr.amount;
+                else acc[date].expense += curr.amount;
+            }
             return acc;
         }, {} as Record<string, { date: string, income: number, expense: number }>);
 
@@ -177,10 +104,9 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, mode, setMode }) =>
         <div className="space-y-6 pb-20 md:pb-0">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <h1 className="text-2xl font-bold text-white">
-                    {mode === 'daily' ? 'Aktueller Status (Heute)' : 'Monatsvorschau'}
+                    {mode === 'daily' ? 'Status: Heute (27.11.)' : 'Vorschau: Monatsende'}
                 </h1>
                 
-                {/* Mode Switcher */}
                 <div className="bg-slate-900 p-1 rounded-lg flex border border-slate-800">
                     <button
                         onClick={() => setMode('daily')}
@@ -191,7 +117,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, mode, setMode }) =>
                         }`}
                     >
                         <Clock className="w-4 h-4" />
-                        Tagesansicht
+                        Ist-Stand
                     </button>
                     <button
                         onClick={() => setMode('monthly')}
@@ -202,54 +128,74 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, mode, setMode }) =>
                         }`}
                     >
                         <Calendar className="w-4 h-4" />
-                        Monatsansicht
+                        Planung
                     </button>
                 </div>
             </div>
             
-            {/* Cards */}
+            {/* Balances Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-slate-400 text-sm font-medium">
-                            {mode === 'daily' ? 'Aktueller Kontostand' : 'Prognose am Monatsende'}
-                        </h3>
+                {/* Bank Balance */}
+                <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden">
+                    <div className="flex items-center justify-between mb-4 relative z-10">
+                        <h3 className="text-slate-400 text-sm font-medium">Girokonto</h3>
                         <div className="p-2 bg-blue-500/20 rounded-lg">
-                            <Wallet className="w-6 h-6 text-blue-400" />
+                            <Landmark className="w-6 h-6 text-blue-400" />
                         </div>
                     </div>
-                    <p className={`text-3xl font-bold ${stats.totalBalance >= 0 ? 'text-white' : 'text-red-400'}`}>
-                        {formatCurrency(stats.totalBalance)}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-2">
-                        {mode === 'daily' ? 'Ohne offene Fixkosten' : 'Inklusive geplanter Buchungen'}
-                    </p>
+                    {mode === 'daily' ? (
+                        <>
+                             <p className={`text-3xl font-bold relative z-10 ${stats.bankBalance >= 0 ? 'text-white' : 'text-red-400'}`}>
+                                {formatCurrency(stats.bankBalance)}
+                            </p>
+                            <p className="text-xs text-slate-500 mt-2 relative z-10">Aktueller Kontostand</p>
+                        </>
+                    ) : (
+                        <>
+                             <p className={`text-3xl font-bold relative z-10 ${stats.projectedBalance >= 0 ? 'text-white' : 'text-red-400'}`}>
+                                {formatCurrency(stats.projectedBalance)}
+                            </p>
+                            <p className="text-xs text-slate-500 mt-2 relative z-10">Prognose inkl. offener Posten</p>
+                        </>
+                    )}
                 </div>
 
+                {/* Cash Balance */}
                 <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
                     <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-slate-400 text-sm font-medium">Einnahmen (Monat)</h3>
-                        <div className="p-2 bg-green-500/20 rounded-lg">
-                            <TrendingUp className="w-6 h-6 text-green-400" />
+                        <h3 className="text-slate-400 text-sm font-medium">Bargeld</h3>
+                        <div className="p-2 bg-emerald-500/20 rounded-lg">
+                            <Coins className="w-6 h-6 text-emerald-400" />
                         </div>
                     </div>
-                    <p className="text-3xl font-bold text-green-400">+{formatCurrency(monthlyStats.income)}</p>
+                    <p className="text-3xl font-bold text-white">{formatCurrency(stats.cashBalance)}</p>
+                    <p className="text-xs text-slate-500 mt-2">Physischer Bestand</p>
                 </div>
 
+                {/* Monthly Flow */}
                 <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
                     <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-slate-400 text-sm font-medium">Ausgaben (Monat)</h3>
-                        <div className="p-2 bg-red-500/20 rounded-lg">
-                            <TrendingDown className="w-6 h-6 text-red-400" />
+                        <h3 className="text-slate-400 text-sm font-medium">Monats-Budget</h3>
+                        <div className="p-2 bg-purple-500/20 rounded-lg">
+                            <Wallet className="w-6 h-6 text-purple-400" />
                         </div>
                     </div>
-                    <p className="text-3xl font-bold text-red-400">-{formatCurrency(monthlyStats.expense)}</p>
+                    <div className="flex justify-between items-end">
+                        <div>
+                            <span className="text-xs text-slate-400 block mb-1">Einnahmen</span>
+                            <span className="text-lg font-bold text-green-400">+{formatCurrency(stats.income)}</span>
+                        </div>
+                        <div className="text-right">
+                             <span className="text-xs text-slate-400 block mb-1">Ausgaben</span>
+                            <span className="text-lg font-bold text-red-400">-{formatCurrency(stats.expense)}</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
             {/* Chart */}
             <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
-                <h3 className="text-lg font-semibold text-white mb-6">Trend (Letzte 7 Tage)</h3>
+                <h3 className="text-lg font-semibold text-white mb-6">Trend (Getätigte Zahlungen)</h3>
                 <div className="h-64 w-full">
                     <ResponsiveContainer width="100%" height="100%">
                         <BarChart data={chartData}>

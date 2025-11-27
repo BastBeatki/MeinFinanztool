@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
-import { TransactionType, Transaction, PaymentMethod, RecurrenceFrequency, RecurringRule } from '../types';
-import { PlusCircle, Loader2, Repeat, CreditCard, Banknote } from 'lucide-react';
+import { TransactionType, Transaction, AccountType, RecurringRule } from '../types';
+import { PlusCircle, Loader2, Repeat, Landmark, Coins } from 'lucide-react';
 
 interface TransactionFormProps {
     onSubmit: (
@@ -13,7 +13,8 @@ interface TransactionFormProps {
 
 const CATEGORIES = [
     'Miete', 'Essen', 'Lebensmittel', 'Transport', 'Nebenkosten', 'Unterhaltung', 'Einkaufen', 
-    'Gesundheit', 'Bildung', 'Gehalt', 'Freiberuflich', 'Investition', 'Versicherung', 'Abo', 'Sonstiges'
+    'Gesundheit', 'Bildung', 'Gehalt', 'Freiberuflich', 'Investition', 'Versicherung', 'Abo', 'Sonstiges',
+    'Bürgergeld', 'Reporter', 'TEDi', 'Budget'
 ];
 
 const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel }) => {
@@ -24,7 +25,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
     const [note, setNote] = useState('');
     
     // New Fields
-    const [method, setMethod] = useState<PaymentMethod>('digital');
+    const [account, setAccount] = useState<AccountType>('bank');
     const [isRecurring, setIsRecurring] = useState(false);
     
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -41,10 +42,9 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
                 category,
                 date,
                 note,
-                method,
-                // If recurring, initial transaction starts as pending (user confirms setup), 
-                // OR completed if date is today/past. Let's default to 'completed' for the FIRST entry manually entered,
-                // unless user wants it pending. Simple: Manually entered = Completed usually.
+                method: account === 'cash' ? 'cash' : 'digital',
+                account,
+                // Manually added items are usually 'completed' immediately unless user wants to plan
                 status: 'completed', 
                 isRecurring,
             };
@@ -52,14 +52,14 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
             let ruleData: Omit<RecurringRule, 'id' | 'createdAt' | 'active'> | undefined;
 
             if (isRecurring) {
-                // If recurring, we create a rule
                 ruleData = {
                     type,
                     category,
                     amount: parseFloat(amount),
                     note,
-                    method,
-                    frequency: 'monthly', // Fixed for now
+                    method: account === 'cash' ? 'cash' : 'digital',
+                    account,
+                    frequency: 'monthly',
                     dayOfMonth: new Date(date).getDate(),
                 };
             }
@@ -112,34 +112,34 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
                     />
                 </div>
 
-                {/* Method & Recurring Toggle */}
+                {/* Account & Recurring Toggle */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                         <label className="block text-sm font-medium text-slate-400 mb-2">Zahlungsmethode</label>
+                         <label className="block text-sm font-medium text-slate-400 mb-2">Konto / Geldbörse</label>
                          <div className="grid grid-cols-2 gap-2">
                             <button
                                 type="button"
-                                onClick={() => setMethod('digital')}
+                                onClick={() => setAccount('bank')}
                                 className={`flex items-center justify-center gap-2 py-2.5 rounded-lg border transition-all ${
-                                    method === 'digital' 
+                                    account === 'bank' 
                                         ? 'bg-blue-600/20 border-blue-500 text-blue-400' 
                                         : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600'
                                 }`}
                             >
-                                <CreditCard className="w-4 h-4" />
-                                <span className="text-sm">Digital</span>
+                                <Landmark className="w-4 h-4" />
+                                <span className="text-sm">Girokonto</span>
                             </button>
                             <button
                                 type="button"
-                                onClick={() => setMethod('cash')}
+                                onClick={() => setAccount('cash')}
                                 className={`flex items-center justify-center gap-2 py-2.5 rounded-lg border transition-all ${
-                                    method === 'cash' 
-                                        ? 'bg-green-600/20 border-green-500 text-green-400' 
+                                    account === 'cash' 
+                                        ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400' 
                                         : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-600'
                                 }`}
                             >
-                                <Banknote className="w-4 h-4" />
-                                <span className="text-sm">Bar</span>
+                                <Coins className="w-4 h-4" />
+                                <span className="text-sm">Bargeld</span>
                             </button>
                          </div>
                     </div>
@@ -157,7 +157,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
                         >
                             <div className="flex items-center gap-2">
                                 <Repeat className="w-4 h-4" />
-                                <span className="text-sm font-medium">Monatliche Fixkosten</span>
+                                <span className="text-sm font-medium">Monatlich Fix</span>
                             </div>
                             <div className={`w-4 h-4 rounded-full border ${isRecurring ? 'bg-purple-500 border-purple-500' : 'border-slate-500'}`} />
                         </button>
@@ -200,7 +200,7 @@ const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, onCancel })
                         onChange={(e) => setNote(e.target.value)}
                         rows={3}
                         className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                        placeholder="Wofür war das?"
+                        placeholder="Zusätzliche Infos..."
                     />
                 </div>
 

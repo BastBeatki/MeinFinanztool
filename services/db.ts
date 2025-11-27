@@ -2,7 +2,7 @@
 import { Transaction, RecurringRule } from '../types';
 
 const DB_NAME = 'FinanceFlowDB';
-const DB_VERSION = 2; // Incremented for schema changes
+const DB_VERSION = 3; // Incremented to trigger re-seed
 const STORE_TRANSACTIONS = 'transactions';
 const STORE_RULES = 'recurring_rules';
 
@@ -26,61 +26,97 @@ export class DBService {
                     const txStore = db.createObjectStore(STORE_TRANSACTIONS, { keyPath: 'id' });
                     txStore.createIndex('date', 'date', { unique: false });
                 } else {
-                    // Migration logic for V2 if needed (simple app: we assume fresh or compatible)
+                    // Clear old data on version upgrade to fix the negative balance logic
                     const txStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_TRANSACTIONS);
-                    // Ensure indexes exist if upgrading
-                    if (txStore && !txStore.indexNames.contains('date')) {
-                        txStore.createIndex('date', 'date', { unique: false });
-                    }
+                    txStore?.clear();
                 }
 
                 // Recurring Rules Store
                 if (!db.objectStoreNames.contains(STORE_RULES)) {
                     const ruleStore = db.createObjectStore(STORE_RULES, { keyPath: 'id' });
                     ruleStore.createIndex('active', 'active', { unique: false });
+                } else {
+                     const ruleStore = (event.target as IDBOpenDBRequest).transaction?.objectStore(STORE_RULES);
+                     ruleStore?.clear();
                 }
             };
 
             request.onsuccess = async (event) => {
                 this.db = (event.target as IDBOpenDBRequest).result;
-                await this.seedInitialRules(); // Load user's CSV logic
-                await this.processRecurringRules(); // Check and generate monthly items
+                await this.seedInitialRules();
+                await this.processRecurringRules();
                 resolve();
             };
         });
     }
 
-    // Seeds the database with the user's specific CSV data structure
     private async seedInitialRules(): Promise<void> {
         if (!this.db) return;
         
         const rulesCount = await this.countRules();
         if (rulesCount > 0) return; // Already seeded
 
+        const now = new Date();
+        const currentMonthPrefix = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+        // 1. Initial Balances (Completed)
+        // Bank Balance (Negative Start)
+        await this.addTransaction({
+            id: crypto.randomUUID(),
+            date: `${currentMonthPrefix}-01`,
+            amount: 1499.61, // Negative Logic handled by Type or Math. Here we use 'expense' to represent initial debt or just negative start? 
+            // Better: Use a specific 'Balance Correction' income/expense. 
+            // If it's -1499, it's like an initial expense of 1499.
+            type: 'expense', 
+            category: 'Startsaldo',
+            note: 'Übertrag aus Vormonat (Soll)',
+            method: 'digital',
+            account: 'bank',
+            status: 'completed',
+            isRecurring: false,
+            createdAt: Date.now()
+        });
+
+        // Cash Balance (Positive)
+        await this.addTransaction({
+            id: crypto.randomUUID(),
+            date: `${currentMonthPrefix}-01`,
+            amount: 200.00,
+            type: 'income',
+            category: 'Bargeld-Start',
+            note: 'Aktueller Bestand',
+            method: 'cash',
+            account: 'cash',
+            status: 'completed',
+            isRecurring: false,
+            createdAt: Date.now()
+        });
+
+        // 2. Define Recurring Rules (Based on CSV)
+        // Note: Amounts are from the "Plan" (CSV 2) to start the month with full budgets.
         const initialRules: Omit<RecurringRule, 'id' | 'createdAt'>[] = [
             // Income
-            { type: 'income', category: 'Bürgergeld', amount: 363.00, note: 'Ende des Monats (Minijobs)', method: 'digital', frequency: 'monthly', dayOfMonth: 28, active: true },
-            { type: 'income', category: 'Gehalt Reporter', amount: 170.89, note: 'Ende des Monats (Variabel)', method: 'digital', frequency: 'monthly', dayOfMonth: 28, active: true },
-            { type: 'income', category: 'Gehalt TEDi', amount: 350.00, note: 'Mitte des Monats', method: 'digital', frequency: 'monthly', dayOfMonth: 15, active: true },
+            { type: 'income', category: 'Bürgergeld', amount: 363.00, note: 'Ende des Monats', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 28, active: true },
+            { type: 'income', category: 'Gehalt Reporter', amount: 170.89, note: 'Variabel', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 28, active: true },
+            { type: 'income', category: 'Gehalt TEDi', amount: 350.00, note: 'Mitte des Monats', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 15, active: true },
             
-            // Fixed Expenses
-            { type: 'expense', category: 'Miete/Essen', amount: 227.00, note: 'Abgabe an MAMA', method: 'digital', frequency: 'monthly', dayOfMonth: 1, active: true },
-            { type: 'expense', category: 'O2 Vertrag', amount: 59.00, note: 'Ende des Monats', method: 'digital', frequency: 'monthly', dayOfMonth: 28, active: true },
-            { type: 'expense', category: 'iPhone 13 Pro', amount: 26.25, note: 'Rate bis 28.8.2026', method: 'digital', frequency: 'monthly', dayOfMonth: 1, active: true },
-            { type: 'expense', category: 'iPhone 16 Pro', amount: 37.00, note: 'Rate bis 28.7.2028', method: 'digital', frequency: 'monthly', dayOfMonth: 1, active: true },
-            { type: 'expense', category: 'Spotify', amount: 10.99, note: 'Ende des Monats', method: 'digital', frequency: 'monthly', dayOfMonth: 28, active: true },
-            { type: 'expense', category: 'Entgeltabrechnung', amount: 9.95, note: 'Ende des Monats', method: 'digital', frequency: 'monthly', dayOfMonth: 28, active: true },
-            { type: 'expense', category: 'Joyn', amount: 6.99, note: 'Mitte des Monats', method: 'digital', frequency: 'monthly', dayOfMonth: 15, active: true },
-            { type: 'expense', category: 'RTL PLUS', amount: 7.99, note: 'Ca. 20.-23.', method: 'digital', frequency: 'monthly', dayOfMonth: 21, active: true },
-            
-            // Variable Budgets (The "Pots")
-            { type: 'expense', category: 'Lebensmittel', amount: 150.00, note: 'Budget (420)', method: 'cash', frequency: 'monthly', dayOfMonth: 1, active: true },
-            { type: 'expense', category: 'Wochenende', amount: 120.00, note: 'Geld zum Leben für Wochenende', method: 'cash', frequency: 'monthly', dayOfMonth: 1, active: true },
-            { type: 'expense', category: 'Wochentage', amount: 120.00, note: 'Geld zum Leben (Mo-Fr)', method: 'cash', frequency: 'monthly', dayOfMonth: 1, active: true },
-            { type: 'expense', category: 'Rauchen', amount: 40.00, note: 'Monatsbudget', method: 'cash', frequency: 'monthly', dayOfMonth: 1, active: true },
-            
-            // Yearly
-             { type: 'expense', category: 'Versicherung', amount: 40.00, note: 'Signal IDUNA (Nur Januar)', method: 'digital', frequency: 'monthly', dayOfMonth: 15, active: false }, // Set active:false initially, logic to enable in Jan could be added
+            // Fixed Expenses (Bank)
+            { type: 'expense', category: 'Miete/Essen', amount: 227.00, note: 'Abgabe an MAMA', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: true },
+            { type: 'expense', category: 'O2 Vertrag', amount: 59.00, note: 'Ende des Monats', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 28, active: true },
+            { type: 'expense', category: 'iPhone 13 Pro', amount: 26.25, note: 'Rate bis 28.8.2026', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: true },
+            { type: 'expense', category: 'iPhone 16 Pro', amount: 37.00, note: 'Rate bis 28.7.2028', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: true },
+            { type: 'expense', category: 'Spotify', amount: 10.99, note: 'Ende des Monats', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 28, active: true },
+            { type: 'expense', category: 'Entgeltabrechnung', amount: 9.95, note: 'Ende des Monats', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 28, active: true },
+            { type: 'expense', category: 'Joyn', amount: 6.99, note: 'Mitte des Monats', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 15, active: true },
+            { type: 'expense', category: 'RTL PLUS', amount: 7.99, note: 'Ca. 20.-23.', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 21, active: true },
+            { type: 'expense', category: 'Versicherung', amount: 40.00, note: 'Signal IDUNA (Januar)', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 15, active: false }, 
+
+            // Variable/Budget Expenses (Deducted from Bank as per CSV note "wird vom Konto abgezogen")
+            { type: 'expense', category: 'Budget (420)', amount: 150.00, note: 'Für den gesamten Monat', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: true },
+            { type: 'expense', category: 'Wochenende', amount: 120.00, note: 'Geld zum Leben', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: true },
+            { type: 'expense', category: 'Wochentage', amount: 120.00, note: 'Geld zum Leben (Mo-Fr)', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: true },
+            { type: 'expense', category: 'Rauchen', amount: 40.00, note: 'Monatsbudget', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: true },
+            { type: 'expense', category: 'Geschenke', amount: 25.00, note: 'Weihnachten/Geburtstag', method: 'digital', account: 'bank', frequency: 'monthly', dayOfMonth: 1, active: true },
         ];
 
         for (const rule of initialRules) {
@@ -90,20 +126,6 @@ export class DBService {
                 createdAt: Date.now()
             } as RecurringRule);
         }
-
-        // Add an initial balance correction transaction to match CSV start
-        await this.addTransaction({
-            id: crypto.randomUUID(),
-            date: new Date().toISOString().split('T')[0],
-            amount: 1399.69,
-            type: 'income',
-            category: 'Startguthaben',
-            note: 'Übertrag aus Vormonat',
-            method: 'digital',
-            status: 'completed',
-            isRecurring: false,
-            createdAt: Date.now()
-        });
     }
 
     private async countRules(): Promise<number> {
@@ -117,30 +139,23 @@ export class DBService {
         });
     }
 
-    // Checks recurring rules and creates transactions for the current month if they don't exist
     private async processRecurringRules(): Promise<void> {
         if (!this.db) return;
         
         const rules = await this.getAllRules();
         const now = new Date();
-        const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`; // YYYY-MM
-        
-        // Get all transactions for this month to check against
-        // Optimized: just get all and filter in memory for this simple app
+        const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         const allTx = await this.getAllTransactions();
         
         for (const rule of rules) {
             if (!rule.active) continue;
 
-            // Check if a transaction for this rule exists in the current month
             const exists = allTx.some(tx => 
                 tx.recurringId === rule.id && 
                 tx.date.startsWith(currentMonthStr)
             );
 
             if (!exists) {
-                // Create the pending transaction
-                // Handle day of month overflow (e.g. Feb 30th -> Feb 28th)
                 const targetDay = Math.min(rule.dayOfMonth, new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate());
                 const dateStr = `${currentMonthStr}-${String(targetDay).padStart(2, '0')}`;
 
@@ -150,9 +165,11 @@ export class DBService {
                     amount: rule.amount,
                     type: rule.type,
                     category: rule.category,
-                    note: rule.note + ' (Automatisch erstellt)',
+                    note: rule.note,
                     method: rule.method,
-                    status: 'pending', // Default to pending so user has to check it
+                    account: rule.account,
+                    // "X" logic: Default to Pending. User removes X (sets to completed) when done.
+                    status: 'pending', 
                     isRecurring: true,
                     recurringId: rule.id,
                     createdAt: Date.now()
@@ -193,7 +210,6 @@ export class DBService {
 
             request.onsuccess = () => {
                 const result = request.result as Transaction[];
-                // Sort by date desc
                 result.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
                 resolve(result);
             };
@@ -234,19 +250,7 @@ export class DBService {
         });
     }
 
-    async clearAll(): Promise<void> {
-         return new Promise((resolve, reject) => {
-            if (!this.db) return reject("DB not initialized");
-            const transaction = this.db.transaction([STORE_TRANSACTIONS, STORE_RULES], 'readwrite');
-            transaction.objectStore(STORE_TRANSACTIONS).clear();
-            transaction.objectStore(STORE_RULES).clear();
-            transaction.oncomplete = () => resolve();
-            transaction.onerror = () => reject(transaction.error);
-        });
-    }
-
     async importData(data: Transaction[]): Promise<void> {
-        // Simple import for transactions only right now
         const transaction = this.db!.transaction([STORE_TRANSACTIONS], 'readwrite');
         const store = transaction.objectStore(STORE_TRANSACTIONS);
         store.clear();

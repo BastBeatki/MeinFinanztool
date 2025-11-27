@@ -1,7 +1,7 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { Transaction } from '../types';
-import { Trash2, ArrowUpRight, ArrowDownLeft, Search, CreditCard, Banknote, Repeat, CheckSquare, Square } from 'lucide-react';
+import { Trash2, ArrowUpRight, ArrowDownLeft, Search, Landmark, Coins, CheckSquare, Square, Edit2, X, Check } from 'lucide-react';
 
 interface TransactionListProps {
     transactions: Transaction[];
@@ -10,17 +10,33 @@ interface TransactionListProps {
 }
 
 const TransactionList: React.FC<TransactionListProps> = ({ transactions, onDelete, onUpdate }) => {
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editAmount, setEditAmount] = useState('');
+
     const formatCurrency = (val: number) => {
         return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val);
     };
 
     const formatDate = (dateStr: string) => {
-        return new Date(dateStr).toLocaleDateString('de-DE', { month: 'short', day: 'numeric', year: 'numeric' });
+        return new Date(dateStr).toLocaleDateString('de-DE', { month: 'short', day: 'numeric' });
     };
 
     const toggleStatus = (tx: Transaction) => {
         const newStatus = tx.status === 'completed' ? 'pending' : 'completed';
         onUpdate({ ...tx, status: newStatus });
+    };
+
+    const startEdit = (tx: Transaction) => {
+        setEditingId(tx.id);
+        setEditAmount(tx.amount.toString());
+    };
+
+    const saveEdit = (tx: Transaction) => {
+        const num = parseFloat(editAmount);
+        if (!isNaN(num)) {
+            onUpdate({ ...tx, amount: num });
+        }
+        setEditingId(null);
     };
 
     return (
@@ -39,24 +55,25 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, onDelet
                 <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
                     {transactions.map((tx) => {
                         const isPending = tx.status === 'pending';
+                        const isEditing = editingId === tx.id;
                         
                         return (
                             <div 
                                 key={tx.id} 
                                 className={`p-4 rounded-xl border flex items-center justify-between group transition-all ${
                                     isPending 
-                                        ? 'bg-slate-900/50 border-slate-800 opacity-75 hover:opacity-100' 
+                                        ? 'bg-slate-900/50 border-slate-800 opacity-80 hover:opacity-100' 
                                         : 'bg-slate-800 border-slate-700 hover:border-slate-600'
                                 }`}
                             >
                                 <div className="flex items-center gap-4">
-                                    {/* Status Toggle for Recurring items */}
+                                    {/* Status Toggle (The "X") */}
                                     <button 
                                         onClick={() => toggleStatus(tx)}
                                         className={`p-1 rounded transition-colors ${
-                                            isPending ? 'text-slate-600 hover:text-blue-400' : 'text-blue-500'
+                                            isPending ? 'text-slate-500 hover:text-blue-400' : 'text-blue-500'
                                         }`}
-                                        title={isPending ? "Als bezahlt markieren" : "Als offen markieren"}
+                                        title={isPending ? "Noch offen (X entfernen)" : "Erledigt (X setzen)"}
                                     >
                                         {isPending ? <Square className="w-5 h-5" /> : <CheckSquare className="w-5 h-5" />}
                                     </button>
@@ -66,11 +83,11 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, onDelet
                                     }`}>
                                         {tx.type === 'income' ? <ArrowUpRight className="w-5 h-5" /> : <ArrowDownLeft className="w-5 h-5" />}
                                         
-                                        {/* Method Icon Badge */}
+                                        {/* Account Badge */}
                                         <div className="absolute -bottom-1 -right-1 bg-slate-800 rounded-full p-0.5 border border-slate-700">
-                                            {tx.method === 'cash' 
-                                                ? <Banknote className="w-3 h-3 text-slate-400" /> 
-                                                : <CreditCard className="w-3 h-3 text-slate-400" />
+                                            {tx.account === 'cash' 
+                                                ? <Coins className="w-3 h-3 text-emerald-400" /> 
+                                                : <Landmark className="w-3 h-3 text-blue-400" />
                                             }
                                         </div>
                                     </div>
@@ -80,9 +97,9 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, onDelet
                                             <p className={`font-medium ${isPending ? 'text-slate-400' : 'text-white'}`}>
                                                 {tx.category}
                                             </p>
-                                            {tx.isRecurring && (
-                                                <span className="text-[10px] bg-purple-500/20 text-purple-300 px-1.5 py-0.5 rounded uppercase font-bold tracking-wider">
-                                                    Fix
+                                            {isPending && (
+                                                <span className="text-[10px] bg-yellow-500/20 text-yellow-500 px-1.5 py-0.5 rounded font-bold">
+                                                    OFFEN (X)
                                                 </span>
                                             )}
                                         </div>
@@ -93,21 +110,47 @@ const TransactionList: React.FC<TransactionListProps> = ({ transactions, onDelet
                                     </div>
                                 </div>
                                 
-                                <div className="flex items-center gap-4">
-                                    <span className={`font-semibold ${
-                                        isPending 
-                                            ? 'text-slate-500' 
-                                            : (tx.type === 'income' ? 'text-green-400' : 'text-slate-100')
-                                    }`}>
-                                        {tx.type === 'income' ? '+' : '-'}{formatCurrency(tx.amount)}
-                                    </span>
-                                    <button 
-                                        onClick={() => onDelete(tx.id)}
-                                        className="text-slate-500 hover:text-red-400 p-2 rounded-lg hover:bg-slate-700 transition-colors opacity-0 group-hover:opacity-100"
-                                        aria-label="Transaktion löschen"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
+                                <div className="flex items-center gap-3">
+                                    {isEditing ? (
+                                        <div className="flex items-center gap-2">
+                                            <input 
+                                                type="number" 
+                                                value={editAmount}
+                                                onChange={(e) => setEditAmount(e.target.value)}
+                                                className="w-20 bg-slate-950 border border-slate-600 rounded px-2 py-1 text-sm text-right text-white"
+                                            />
+                                            <button onClick={() => saveEdit(tx)} className="text-green-400 hover:bg-slate-700 p-1 rounded"><Check className="w-4 h-4"/></button>
+                                            <button onClick={() => setEditingId(null)} className="text-red-400 hover:bg-slate-700 p-1 rounded"><X className="w-4 h-4"/></button>
+                                        </div>
+                                    ) : (
+                                        <div className="text-right">
+                                            <span className={`font-semibold block ${
+                                                isPending 
+                                                    ? 'text-slate-500' 
+                                                    : (tx.type === 'income' ? 'text-green-400' : 'text-slate-100')
+                                            }`}>
+                                                {tx.type === 'income' ? '+' : '-'}{formatCurrency(tx.amount)}
+                                            </span>
+                                        </div>
+                                    )}
+
+                                    {/* Action Menu */}
+                                    <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button 
+                                            onClick={() => startEdit(tx)}
+                                            className="text-slate-500 hover:text-blue-400 p-1 rounded hover:bg-slate-700"
+                                            title="Betrag anpassen"
+                                        >
+                                            <Edit2 className="w-3 h-3" />
+                                        </button>
+                                        <button 
+                                            onClick={() => onDelete(tx.id)}
+                                            className="text-slate-500 hover:text-red-400 p-1 rounded hover:bg-slate-700"
+                                            title="Löschen"
+                                        >
+                                            <Trash2 className="w-3 h-3" />
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         );
