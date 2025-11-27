@@ -2,7 +2,7 @@
 import React, { useMemo, useState } from 'react';
 import { Transaction, RecurringRule, AccountType } from '../types';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
-import { Landmark, Coins, TrendingUp, AlertCircle, Plus, Calendar, X } from 'lucide-react';
+import { Landmark, Coins, TrendingUp, AlertCircle, Plus, Calendar, X, Rocket } from 'lucide-react';
 
 interface DashboardProps {
     transactions: Transaction[];
@@ -73,7 +73,48 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
         };
     }, [transactions]);
 
-    // 2. Chart Data: Account Balance Trend (Real + Simulation)
+    // 2. Debt Free Forecast Calculation
+    const debtFreePrediction = useMemo(() => {
+        if (stats.bankBalance >= 0) return { status: 'positive', date: 'Jetzt' };
+
+        // Calculate Monthly Net (Recurring only) for Bank
+        let monthlyIncome = 0;
+        let monthlyExpense = 0;
+
+        recurringRules.forEach(rule => {
+            if (rule.active && rule.account === 'bank') {
+                if (rule.type === 'income') monthlyIncome += rule.amount;
+                else monthlyExpense += rule.amount;
+            }
+        });
+
+        const monthlyNet = monthlyIncome - monthlyExpense;
+
+        if (monthlyNet <= 0) {
+            return { status: 'impossible', date: 'Nie (Ausgaben > Einnahmen)' };
+        }
+
+        // Simulate months until balance > 0
+        let tempBalance = stats.bankBalance;
+        let monthsToAdd = 0;
+        
+        // Limit to 120 months (10 years) to prevent infinite loops
+        while (tempBalance < 0 && monthsToAdd < 120) {
+            tempBalance += monthlyNet;
+            monthsToAdd++;
+        }
+
+        if (monthsToAdd >= 120) return { status: 'impossible', date: '> 10 Jahre' };
+
+        const futureDate = new Date();
+        futureDate.setMonth(futureDate.getMonth() + monthsToAdd);
+        
+        const formatter = new Intl.DateTimeFormat('de-DE', { month: 'long', year: 'numeric' });
+        return { status: 'future', date: formatter.format(futureDate) };
+
+    }, [stats.bankBalance, recurringRules]);
+
+    // 3. Chart Data: Account Balance Trend (Real + Simulation)
     const chartData = useMemo(() => {
         const now = new Date();
         const todayStr = now.toISOString().split('T')[0];
@@ -123,9 +164,15 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                 });
             }
 
+            // Create formatted dates for UI
+            const shortDate = new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit' }).format(d);
+            const tooltipDate = new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: 'long', year: 'numeric' }).format(d);
+
             data.push({
                 day: d.getDate(),
                 fullDate: dateStr,
+                shortDate, // "01.12."
+                tooltipDate, // "01. Dezember 2025"
                 balance: runningBalance,
                 isFuture
             });
@@ -204,7 +251,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
             </div>
             
             {/* 1. Main Balances */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {/* Bank Account */}
                 <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden">
                     <div className="flex items-center justify-between mb-4">
@@ -246,6 +293,36 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                     </div>
                     <p className="text-4xl font-bold tracking-tight text-white">{formatCurrency(stats.cashBalance)}</p>
                     <p className="text-sm text-slate-500 mt-1">Im Portemonnaie</p>
+                </div>
+
+                {/* Debt Free Forecast (New) */}
+                <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg relative overflow-hidden">
+                     <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-2">
+                            <div className="p-2 bg-purple-500/20 rounded-lg">
+                                <Rocket className="w-5 h-5 text-purple-400" />
+                            </div>
+                            <h3 className="text-slate-300 font-medium">Schuldenfrei</h3>
+                        </div>
+                    </div>
+                    <div className="flex flex-col h-full justify-between pb-2">
+                        <div>
+                             {debtFreePrediction.status === 'positive' ? (
+                                <p className="text-2xl font-bold text-green-400">Geschafft!</p>
+                             ) : debtFreePrediction.status === 'impossible' ? (
+                                <p className="text-2xl font-bold text-red-400">Prüfen!</p>
+                             ) : (
+                                <p className="text-3xl font-bold text-purple-100">{debtFreePrediction.date}</p>
+                             )}
+                        </div>
+                        <p className="text-xs text-slate-500 mt-2">
+                             {debtFreePrediction.status === 'positive' 
+                                ? 'Du bist aktuell im Plus.' 
+                                : debtFreePrediction.status === 'impossible'
+                                    ? 'Ausgaben übersteigen Einnahmen.'
+                                    : 'Voraussichtlich im Plus ab diesem Monat.'}
+                        </p>
+                    </div>
                 </div>
             </div>
 
@@ -324,12 +401,12 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                             </defs>
                             <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                             <XAxis 
-                                dataKey="day" 
+                                dataKey="shortDate" 
                                 stroke="#64748b" 
                                 fontSize={12} 
                                 tickLine={false} 
                                 axisLine={false} 
-                                tickFormatter={(val) => `${val}.`}
+                                minTickGap={30} // Prevents cluttering by hiding adjacent labels
                             />
                             <YAxis 
                                 stroke="#64748b" 
@@ -342,7 +419,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                                 contentStyle={{ backgroundColor: '#0f172a', borderColor: '#334155', borderRadius: '8px', color: '#fff' }}
                                 itemStyle={{ color: '#fff' }}
                                 formatter={(value: number) => [formatCurrency(value), 'Kontostand']}
-                                labelFormatter={(label) => `${label}.`}
+                                labelFormatter={(label, payload) => payload[0]?.payload.tooltipDate || label}
                             />
                             <ReferenceLine y={0} stroke="#94a3b8" strokeDasharray="3 3" />
                             <Area 
