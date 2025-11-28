@@ -34,6 +34,13 @@ export interface RecurringRule {
     createdAt: number;
 }
 
+export interface PotConfig {
+    id: string; // e.g., 'pot_420_2025-11' or 'pot_420_default'
+    potId: string;
+    limit: number;
+    month?: string; // YYYY-MM or undefined for default
+}
+
 export enum AppView {
     DASHBOARD = 'DASHBOARD',
     TRANSACTIONS = 'TRANSACTIONS',

@@ -1,8 +1,9 @@
 
-import React, { useMemo, useState } from 'react';
-import { Transaction, RecurringRule, AccountType } from '../types';
+import React, { useMemo, useState, useEffect } from 'react';
+import { Transaction, RecurringRule, AccountType, PotConfig } from '../types';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine } from 'recharts';
-import { Landmark, Coins, TrendingUp, AlertCircle, Plus, Calendar, X, Rocket, Wallet, HeartHandshake } from 'lucide-react';
+import { Landmark, Coins, TrendingUp, AlertCircle, Plus, Calendar, X, Rocket, Wallet, HeartHandshake, Pencil, Save, Check } from 'lucide-react';
+import { dbService } from '../services/db';
 
 interface DashboardProps {
     transactions: Transaction[];
@@ -13,10 +14,10 @@ interface DashboardProps {
     onUpdateRule?: (rule: RecurringRule) => Promise<void>;
 }
 
-// Fixed Budget Configurations
-const BUDGET_POTS = [
-    // Standard limit is 100, exception for Nov 2025 (150)
-    { id: 'pot_420', name: '420 (Gras)', limit: 100, category: '420' },
+// Fixed Budget Configurations (DEFAULTS)
+// Note: 420 is now 50€ default.
+const DEFAULT_BUDGET_POTS = [
+    { id: 'pot_420', name: '420 (Gras)', limit: 50, category: '420' },
     { id: 'pot_we', name: 'Wochenende', limit: 120, category: 'Wochenende' },
     { id: 'pot_week', name: 'Unter der Woche', limit: 120, category: 'Wochentage' },
     { id: 'pot_smoke', name: 'Rauchen', limit: 40, category: 'Rauchen' },
@@ -24,26 +25,49 @@ const BUDGET_POTS = [
 
 const DEBT_TOTAL_MAMA = 1000;
 
-// FIX: Use the exact same date as the DB seed to ensure "Today" in the dashboard matches the data context.
-const APP_NOW = new Date('2025-11-17T12:00:00');
-
 const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mode, setMode, onAddTransaction, onUpdateRule }) => {
     
     // Pot Modal State
-    const [selectedPot, setSelectedPot] = useState<typeof BUDGET_POTS[0] | null>(null);
+    const [selectedPot, setSelectedPot] = useState<typeof DEFAULT_BUDGET_POTS[0] | null>(null);
     const [potAmount, setPotAmount] = useState('');
-    const [potDate, setPotDate] = useState(APP_NOW.toISOString().split('T')[0]);
-    const [potAccount, setPotAccount] = useState<AccountType>('cash'); // Default Cash, but changeable
+    const [potDate, setPotDate] = useState(new Date().toISOString().split('T')[0]);
+    const [potAccount, setPotAccount] = useState<AccountType>('cash'); 
     
+    // Pot EDIT Config State
+    const [editingPotId, setEditingPotId] = useState<string | null>(null);
+    const [editPotLimit, setEditPotLimit] = useState('');
+    const [savePotFuture, setSavePotFuture] = useState(false);
+    const [potConfigs, setPotConfigs] = useState<PotConfig[]>([]);
+
     // Debt Config State
     const [showDebtConfig, setShowDebtConfig] = useState(false);
     const [debtInstallment, setDebtInstallment] = useState('50');
 
-    // Forecast Date State (Default: End of Current Month relative to APP_NOW)
+    // Forecast Date State (Default: End of Current Month relative to Real NOW)
     const [forecastDate, setForecastDate] = useState(() => {
-        const now = APP_NOW;
+        const now = new Date();
         return new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
     });
+
+    // Load Pot Settings
+    useEffect(() => {
+        dbService.getPotConfigs().then(setPotConfigs);
+    }, []);
+
+    // Helper: Get active limit for a pot based on month
+    const getPotLimit = (potId: string, dateObj: Date) => {
+        const monthStr = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}`;
+        // 1. Check specific month override
+        const specific = potConfigs.find(c => c.potId === potId && c.month === monthStr);
+        if (specific) return specific.limit;
+        
+        // 2. Check default override
+        const def = potConfigs.find(c => c.potId === potId && !c.month);
+        if (def) return def.limit;
+
+        // 3. Fallback to hardcoded default
+        return DEFAULT_BUDGET_POTS.find(p => p.id === potId)?.limit || 0;
+    };
 
     // Helper: Count occurrences of a specific weekday in a month (0=Sun, 1=Mon, ..., 5=Fri, 6=Sat)
     const countWeekdaysInMonth = (year: number, month: number, dayIndex: number) => {
@@ -53,12 +77,12 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
             if (d.getDay() === dayIndex) count++;
             d.setDate(d.getDate() + 1);
         }
-        return count > 0 ? count : 1; // Prevent division by zero
+        return count > 0 ? count : 1; 
     };
 
     // 1. Calculate Stats
     const stats = useMemo(() => {
-        const now = APP_NOW;
+        const now = new Date();
         const currentMonth = now.getMonth();
         const currentYear = now.getFullYear();
 
@@ -66,7 +90,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
         let cashBalance = 0;
         let debtRepaid = 0;
         
-        // Calculate Actual Balances (Completed transactions up to "APP_NOW")
+        // Calculate Actual Balances
         transactions.forEach(tx => {
             if (tx.status === 'completed') {
                 const amt = tx.type === 'income' ? tx.amount : -tx.amount;
@@ -81,11 +105,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
         });
 
         // Calculate Pot Usage (Current Month)
-        // 420 Logic: Check if we are viewing Nov 2025 specifically
-        const forecastObj = new Date(forecastDate);
-        const isNov2025 = forecastObj.getFullYear() === 2025 && forecastObj.getMonth() === 10; // Month is 0-indexed (10 = Nov)
-
-        const potStats = BUDGET_POTS.map(pot => {
+        const potStats = DEFAULT_BUDGET_POTS.map(pot => {
             const spent = transactions
                 .filter(tx => 
                     tx.category === pot.category && 
@@ -95,13 +115,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                 )
                 .reduce((sum, tx) => sum + tx.amount, 0);
             
-            // Exception Logic for 420: 
-            // Standard: 100
-            // Exception (Nov 2025): 150
-            let activeLimit = pot.limit;
-            if (pot.id === 'pot_420') {
-                activeLimit = isNov2025 ? 150 : 100;
-            }
+            const activeLimit = getPotLimit(pot.id, now);
             
             return { ...pot, limit: activeLimit, spent, remaining: activeLimit - spent };
         });
@@ -116,25 +130,21 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
             remainingDebt,
             totalNetWorth
         };
-    }, [transactions, forecastDate]);
+    }, [transactions, forecastDate, potConfigs]);
 
     // 2. "Permanently Positive" Forecast Calculation
     const permanentPositiveForecast = useMemo(() => {
-        // Simulation settings
         const SIMULATION_YEARS = 5;
         const SIM_DAYS = 365 * SIMULATION_YEARS;
         
         let simBalance = stats.bankBalance;
-        // If currently negative, track the last day it is negative.
-        // If currently positive, we still need to check if it drops negative in future.
-        let lastNegativeDate: Date | null = simBalance < 0 ? new Date(APP_NOW) : null;
+        const now = new Date();
+        let lastNegativeDate: Date | null = simBalance < 0 ? new Date(now) : null;
 
-        const now = APP_NOW;
         const startSim = new Date(now);
-        startSim.setDate(startSim.getDate() + 1); // Start simulation from tomorrow
+        startSim.setDate(startSim.getDate() + 1);
         startSim.setHours(0,0,0,0);
 
-        // Map future non-recurring transactions for faster lookup
         const futureOneTimeMap = new Map<string, Transaction[]>();
         transactions.forEach(tx => {
             if (!tx.isRecurring && new Date(tx.date) > now && tx.account === 'bank') {
@@ -150,14 +160,14 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
             const dateStr = d.toISOString().split('T')[0];
             
             const day = d.getDate();
-            const month = d.getMonth(); // 0-11
+            const month = d.getMonth(); 
             const year = d.getFullYear();
-            const dayOfWeek = d.getDay(); // 0=Sun
+            const dayOfWeek = d.getDay(); 
 
             // A. Apply Fixed Recurring Rules
             recurringRules.forEach(rule => {
                 if (rule.active && rule.account === 'bank' && rule.dayOfMonth === day) {
-                    // Logic for specific skips (copied from DB/Chart logic)
+                    // Logic for specific skips
                     if (rule.category === 'Gehalt TEDi' && year === 2025 && month === 10) return;
 
                     if (rule.type === 'income') simBalance += rule.amount;
@@ -174,10 +184,10 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                 });
             }
 
-            // C. Apply Pot Simulation (Spending Habits)
-            // 420 (1st and 15th)
-            const isNov25 = year === 2025 && month === 10;
-            const limit420 = isNov25 ? 150 : 100;
+            // C. Apply Pot Simulation
+            // We use default pot limits for future unless specific logic needed
+            // Pot 420 (Split 1st and 15th)
+            const limit420 = getPotLimit('pot_420', d);
             if (day === 1 || day === 15) {
                 simBalance -= (limit420 / 2);
             }
@@ -185,21 +195,20 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
             // Weekend (Fridays)
             if (dayOfWeek === 5) {
                 const fridays = countWeekdaysInMonth(year, month, 5);
-                simBalance -= (120 / fridays);
+                simBalance -= (getPotLimit('pot_we', d) / fridays);
             }
 
             // Weekdays (Mondays)
             if (dayOfWeek === 1) {
                 const mondays = countWeekdaysInMonth(year, month, 1);
-                simBalance -= (120 / mondays);
+                simBalance -= (getPotLimit('pot_week', d) / mondays);
             }
 
             // Smoking (1, 8, 15, 22)
             if ([1, 8, 15, 22].includes(day)) {
-                simBalance -= 10; 
+                simBalance -= (getPotLimit('pot_smoke', d) / 4); 
             }
 
-            // Track Negative Status
             if (simBalance < 0) {
                 lastNegativeDate = new Date(d);
             }
@@ -209,7 +218,6 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
             return { status: 'positive', date: 'Sofort' };
         }
         
-        // If the very last day of simulation is still negative, we haven't recovered
         const lastSimDay = new Date(startSim);
         lastSimDay.setDate(lastSimDay.getDate() + SIM_DAYS - 1);
         
@@ -217,29 +225,24 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
              return { status: 'impossible', date: '> 5 Jahre' };
         }
 
-        // The day AFTER the last negative date is when we become stably positive
         const stableDate = new Date(lastNegativeDate);
         stableDate.setDate(stableDate.getDate() + 1);
         
         const formatter = new Intl.DateTimeFormat('de-DE', { month: 'long', year: 'numeric' });
         return { status: 'future', date: formatter.format(stableDate) };
 
-    }, [stats.bankBalance, recurringRules, transactions]);
+    }, [stats.bankBalance, recurringRules, transactions, potConfigs]);
 
-    // 3. Chart Data: Account Balance Trend (Real + Simulation)
+    // 3. Chart Data
     const chartData = useMemo(() => {
-        const now = APP_NOW;
+        const now = new Date();
         const endDate = new Date(forecastDate);
         const data = [];
 
-        // --- PART 1: Historical Data (Real Transactions) ---
-        // Find rough start date for chart (Start of this month)
+        // --- PART 1: Historical Data ---
         const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-        
-        // Sort transactions
         const sortedTx = [...transactions].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
         
-        // Calculate running balance up to "startDate"
         let runningBalance = 0;
         
         sortedTx.forEach(tx => {
@@ -250,38 +253,30 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
         });
 
         // Loop Day by Day
-        // Important: Loop until endDate, which might be far in future
         for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
             const dateStr = d.toISOString().split('T')[0];
             const isFuture = d > now;
 
             if (!isFuture) {
-                // REALITY (Simulated "Reality" up to APP_NOW)
                 const dailyTxs = sortedTx.filter(tx => tx.date === dateStr && tx.account === 'bank' && tx.status === 'completed');
                 dailyTxs.forEach(tx => {
                     if (tx.type === 'income') runningBalance += tx.amount;
                     else runningBalance -= tx.amount;
                 });
             } else {
-                // FUTURE SIMULATION
                 const dayOfMonth = d.getDate();
-                const dayOfWeek = d.getDay(); // 0 = Sun, 1 = Mon, ... 5 = Fri
+                const dayOfWeek = d.getDay(); 
                 const currentMonth = d.getMonth();
                 const currentYear = d.getFullYear();
 
-                // A. Fixed Recurring Rules (Rent, Salary, etc.)
                 recurringRules.forEach(rule => {
                     if (rule.active && rule.account === 'bank' && rule.dayOfMonth === dayOfMonth) {
-                        // Skip Tedi in Nov 2025 exception
                         if (rule.category === 'Gehalt TEDi' && currentYear === 2025 && currentMonth === 10) return;
-
                         if (rule.type === 'income') runningBalance += rule.amount;
                         else runningBalance -= rule.amount;
                     }
                 });
 
-                // B. One-time Future Transactions from DB
-                // We use !isRecurring to find manually added future transactions (e.g. Refund)
                 const futureOneTimeTxs = transactions.filter(tx => 
                     tx.date === dateStr && 
                     tx.account === 'bank' && 
@@ -292,29 +287,24 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                     else runningBalance -= tx.amount;
                 });
 
-                // C. Pot Simulation (Spending Habits)
-                // 1. Pot 420: Split 50/50 on 1st and 15th
-                const isNov25 = currentYear === 2025 && currentMonth === 10;
-                const limit420 = isNov25 ? 150 : 100;
+                // Pot Simulation
+                const limit420 = getPotLimit('pot_420', d);
                 if (dayOfMonth === 1 || dayOfMonth === 15) {
                     runningBalance -= (limit420 / 2);
                 }
 
-                // 2. Pot Weekend: Evenly split across Fridays
-                const fridaysInMonth = countWeekdaysInMonth(currentYear, currentMonth, 5); // 5 = Friday
+                const fridaysInMonth = countWeekdaysInMonth(currentYear, currentMonth, 5);
                 if (dayOfWeek === 5) {
-                    runningBalance -= (120 / fridaysInMonth);
+                    runningBalance -= (getPotLimit('pot_we', d) / fridaysInMonth);
                 }
 
-                // 3. Pot Weekdays: Evenly split across Mondays
-                const mondaysInMonth = countWeekdaysInMonth(currentYear, currentMonth, 1); // 1 = Monday
+                const mondaysInMonth = countWeekdaysInMonth(currentYear, currentMonth, 1);
                 if (dayOfWeek === 1) {
-                    runningBalance -= (120 / mondaysInMonth);
+                    runningBalance -= (getPotLimit('pot_week', d) / mondaysInMonth);
                 }
 
-                // 4. Pot Smoking: 40 total, divided by 4, deducted on 1st, 8th, 15th, 22nd
                 if ([1, 8, 15, 22].includes(dayOfMonth)) {
-                    runningBalance -= (40 / 4);
+                    runningBalance -= (getPotLimit('pot_smoke', d) / 4);
                 }
             }
 
@@ -331,13 +321,13 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
             });
         }
         return data;
-    }, [transactions, recurringRules, forecastDate]);
+    }, [transactions, recurringRules, forecastDate, potConfigs]);
 
     // Derived Projected Balance
     const projectedBalance = chartData.length > 0 ? chartData[chartData.length - 1].balance : stats.bankBalance;
-
-    // Debt Rule Helper
     const mamaDebtRule = recurringRules.find(r => r.category === 'Rückzahlung Mama');
+
+    // -- HANDLERS --
 
     const handlePotSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -357,7 +347,43 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
 
         setSelectedPot(null);
         setPotAmount('');
-        setPotDate(APP_NOW.toISOString().split('T')[0]);
+        setPotDate(new Date().toISOString().split('T')[0]);
+    };
+
+    const handlePotLimitEdit = (pot: any) => {
+        setEditingPotId(pot.id);
+        setEditPotLimit(pot.limit.toString());
+        setSavePotFuture(false);
+    };
+
+    const savePotLimit = async () => {
+        if (!editingPotId || !editPotLimit) return;
+        
+        const now = new Date();
+        const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+        const newLimit = parseFloat(editPotLimit);
+
+        // 1. Save specific month override
+        await dbService.savePotConfig({
+            id: `${editingPotId}_${monthStr}`,
+            potId: editingPotId,
+            limit: newLimit,
+            month: monthStr
+        });
+
+        // 2. If Future checked, save default override
+        if (savePotFuture) {
+             await dbService.savePotConfig({
+                id: `${editingPotId}_default`,
+                potId: editingPotId,
+                limit: newLimit
+            });
+        }
+
+        // Refresh configs
+        const configs = await dbService.getPotConfigs();
+        setPotConfigs(configs);
+        setEditingPotId(null);
     };
 
     const toggleDebtRule = async (active: boolean) => {
@@ -374,18 +400,24 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
         return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(val);
     };
 
+    const todayDisplay = new Date().toLocaleDateString('de-DE', { weekday: 'long', day: '2-digit', month: 'long' });
+
     return (
         <div className="space-y-6 pb-20 md:pb-0">
             {/* Header / Forecast Control */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-white">
-                        {mode === 'daily' ? 'Finanzstatus: Heute' : 'Prognose & Verlauf'}
+                        {mode === 'daily' ? 'Finanzstatus' : 'Prognose & Verlauf'}
                     </h1>
-                    {/* Net Worth Display */}
-                    <div className="flex items-center gap-2 text-slate-400 text-sm mt-1">
-                        <Wallet className="w-4 h-4" />
-                        <span>Gesamtvermögen (inkl. Schulden): <span className={stats.totalNetWorth >= 0 ? 'text-green-400 font-medium' : 'text-red-400 font-medium'}>{formatCurrency(stats.totalNetWorth)}</span></span>
+                    <div className="flex items-center gap-4 mt-1">
+                        <span className="text-blue-400 font-medium bg-blue-500/10 px-2 py-0.5 rounded text-sm border border-blue-500/20">
+                            {todayDisplay}
+                        </span>
+                        <div className="flex items-center gap-2 text-slate-400 text-sm">
+                            <Wallet className="w-4 h-4" />
+                            <span>Gesamt: <span className={stats.totalNetWorth >= 0 ? 'text-green-400 font-medium' : 'text-red-400 font-medium'}>{formatCurrency(stats.totalNetWorth)}</span></span>
+                        </div>
                     </div>
                 </div>
                 
@@ -459,7 +491,7 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                     <p className="text-4xl font-bold tracking-tight text-white">{formatCurrency(stats.cashBalance)}</p>
                 </div>
 
-                {/* Debt (New) */}
+                {/* Debt */}
                 <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 shadow-lg">
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-2">
@@ -520,17 +552,38 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                     return (
                         <div 
                             key={pot.id} 
-                            onClick={() => {
-                                setSelectedPot(pot);
-                                setPotAccount('cash'); 
-                            }}
-                            className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col justify-between cursor-pointer hover:border-blue-500 transition-all group relative"
+                            className="bg-slate-800 p-4 rounded-xl border border-slate-700 flex flex-col justify-between hover:border-blue-500 transition-all group relative"
                         >
-                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <div className="bg-blue-600 p-1 rounded-full"><Plus className="w-3 h-3 text-white" /></div>
+                            <div className="absolute top-2 right-2 flex gap-1">
+                                <button 
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        handlePotLimitEdit(pot);
+                                    }}
+                                    className="p-1.5 rounded-full bg-slate-700 text-slate-400 hover:text-white hover:bg-slate-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    title="Budget ändern"
+                                >
+                                    <Pencil className="w-3 h-3" />
+                                </button>
+                                <button 
+                                    onClick={() => {
+                                        setSelectedPot(pot);
+                                        setPotAccount('cash'); 
+                                    }}
+                                    className="p-1.5 rounded-full bg-blue-600 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:scale-110"
+                                    title="Ausgabe hinzufügen"
+                                >
+                                    <Plus className="w-3 h-3" />
+                                </button>
                             </div>
 
-                            <div>
+                            <div 
+                                onClick={() => {
+                                    setSelectedPot(pot);
+                                    setPotAccount('cash'); 
+                                }}
+                                className="cursor-pointer"
+                            >
                                 <div className="flex justify-between items-start mb-2">
                                     <span className="font-medium text-slate-200">{pot.name}</span>
                                     {percentage >= 100 && <AlertCircle className="w-4 h-4 text-red-500" />}
@@ -541,18 +594,18 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                                     </span>
                                     <span className="text-xs text-slate-500">übrig</span>
                                 </div>
-                            </div>
                             
-                            <div className="space-y-1">
-                                <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden">
-                                    <div 
-                                        className={`h-full rounded-full transition-all duration-500 ${colorClass}`} 
-                                        style={{ width: `${percentage}%` }}
-                                    />
-                                </div>
-                                <div className="flex justify-between text-[10px] text-slate-500 uppercase font-medium">
-                                    <span>{formatCurrency(pot.spent)} Ausg.</span>
-                                    <span>Limit: {formatCurrency(pot.limit)}</span>
+                                <div className="space-y-1">
+                                    <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden">
+                                        <div 
+                                            className={`h-full rounded-full transition-all duration-500 ${colorClass}`} 
+                                            style={{ width: `${percentage}%` }}
+                                        />
+                                    </div>
+                                    <div className="flex justify-between text-[10px] text-slate-500 uppercase font-medium">
+                                        <span>{formatCurrency(pot.spent)} Ausg.</span>
+                                        <span>Limit: {formatCurrency(pot.limit)}</span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -682,6 +735,58 @@ const Dashboard: React.FC<DashboardProps> = ({ transactions, recurringRules, mod
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL: Edit Pot Limit */}
+            {editingPotId && (
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+                    <div className="bg-slate-800 rounded-2xl w-full max-w-sm border border-slate-700 shadow-2xl overflow-hidden">
+                        <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-900/50">
+                            <h3 className="font-bold text-white">Budget anpassen</h3>
+                            <button onClick={() => setEditingPotId(null)} className="text-slate-400 hover:text-white"><X className="w-5 h-5"/></button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <p className="text-sm text-slate-400">
+                                Ändere das Limit für diesen Monat.
+                            </p>
+                             <div>
+                                <label className="block text-xs font-medium text-slate-400 mb-1">Neues Limit (€)</label>
+                                <input 
+                                    type="number" 
+                                    autoFocus
+                                    step="1" 
+                                    required
+                                    value={editPotLimit}
+                                    onChange={(e) => setEditPotLimit(e.target.value)}
+                                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-4 py-3 text-white text-lg focus:outline-none focus:border-blue-500"
+                                />
+                            </div>
+
+                            <div className="flex items-center gap-3 bg-slate-900 p-3 rounded-lg border border-slate-700/50">
+                                <div className="relative flex items-center">
+                                    <input 
+                                        type="checkbox"
+                                        id="saveFuture"
+                                        checked={savePotFuture}
+                                        onChange={(e) => setSavePotFuture(e.target.checked)}
+                                        className="w-5 h-5 border-slate-600 rounded bg-slate-800 text-blue-500 focus:ring-offset-0 focus:ring-0"
+                                    />
+                                </div>
+                                <label htmlFor="saveFuture" className="text-sm text-slate-300 select-none">
+                                    Auch als neuen Standard speichern? <br/>
+                                    <span className="text-[10px] text-slate-500">Gilt für alle künftigen Monate</span>
+                                </label>
+                            </div>
+
+                            <button 
+                                onClick={savePotLimit} 
+                                className="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-lg shadow-lg shadow-green-500/20 transition-all flex items-center justify-center gap-2"
+                            >
+                                <Save className="w-4 h-4" /> Speichern
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
